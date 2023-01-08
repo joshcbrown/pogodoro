@@ -9,3 +9,5 @@ pub mod tui;
 
 /// Event handler.
 pub mod handler;
+
+pub mod pomodoro;
