@@ -11,5 +11,3 @@ pub mod tui;
 pub mod handler;
 
 pub mod pomodoro;
-
-pub mod config;

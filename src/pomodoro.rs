@@ -36,7 +36,13 @@ impl fmt::Display for Timer {
             write!(f, "Finished!")
         } else {
             let to_go = (self.dur - self.elapsed + Duration::from_secs(1)).as_secs();
-            write!(f, "{}m{}s", to_go / 60, to_go % 60)
+            let mins = to_go / 60;
+            let hours = mins / 60;
+            if hours > 0 {
+                write!(f, "{}h{}m{}s", hours, mins - 60 * hours, to_go % 60)
+            } else {
+                write!(f, "{}m{}s", mins, to_go % 60)
+            }
         }
     }
 }
