@@ -1,9 +1,11 @@
 [package]
 name = "pogodoro"
 version = "0.1.0"
-authors = ["joshcbrown <80245312+joshcbrown@users.noreply.github.com>"]
+authors = ["joshcbrown <joshcarlbrown@gmail.com>"]
 edition = "2021"
+about = "A poggers-as-hell terminal UI pomodoro timer"
 
 [dependencies]
+clap = { version = "4.0.32", features = ["derive"] }
 crossterm = "0.25.0"
 tui = "0.19.0"

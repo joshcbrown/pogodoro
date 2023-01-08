@@ -1,4 +1,4 @@
-use crate::pomodoro::Pomodoro;
+use crate::pomodoro::{Pomodoro, PomodoroState};
 use std::error;
 use std::time::Duration;
 use tui::backend::Backend;
@@ -22,9 +22,9 @@ impl Default for App {
         Self {
             running: true,
             pomo: Pomodoro::new(
-                Duration::from_secs(2),
-                Duration::from_secs(5),
-                Duration::from_secs(10),
+                Duration::from_secs(20 * 60),
+                Duration::from_secs(5 * 60),
+                Duration::from_secs(15 * 60),
             ),
         }
     }
@@ -32,12 +32,25 @@ impl Default for App {
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(ops: Option<[u64; 3]>) -> Self {
+        match ops {
+            Some([work_dur, short_break_dur, long_break_dur]) => Self {
+                running: true,
+                pomo: Pomodoro::new(
+                    Duration::from_secs(work_dur * 60),
+                    Duration::from_secs(short_break_dur * 60),
+                    Duration::from_secs(long_break_dur * 60),
+                ),
+            },
+            None => Self::default(),
+        }
     }
 
     /// Handles the tick event of the terminal.
     pub fn tick(&mut self) {
+        if let PomodoroState::LongBreak = self.pomo.state() {
+            self.running = false
+        }
         self.pomo.update()
     }
 
