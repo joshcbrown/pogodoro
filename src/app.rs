@@ -32,17 +32,23 @@ impl Default for App {
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new(ops: Option<[u64; 3]>) -> Self {
+    pub fn new(ops: Option<Vec<u64>>) -> AppResult<Self> {
         match ops {
-            Some([work_dur, short_break_dur, long_break_dur]) => Self {
-                running: true,
-                pomo: Pomodoro::new(
-                    Duration::from_secs(work_dur * 60),
-                    Duration::from_secs(short_break_dur * 60),
-                    Duration::from_secs(long_break_dur * 60),
-                ),
-            },
-            None => Self::default(),
+            Some(vec) => {
+                if let [work_dur, short_break_dur, long_break_dur] = &vec[..] {
+                    Ok(Self {
+                        running: true,
+                        pomo: Pomodoro::new(
+                            Duration::from_secs(work_dur * 60),
+                            Duration::from_secs(short_break_dur * 60),
+                            Duration::from_secs(long_break_dur * 60),
+                        ),
+                    })
+                } else {
+                    Err("expected vector of length 3".into())
+                }
+            }
+            None => Ok(Self::default()),
         }
     }
 
