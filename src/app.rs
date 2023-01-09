@@ -71,8 +71,16 @@ impl App {
         // - https://github.com/fdehau/tui-rs/tree/master/examples
 
         let frame_rect = frame.size();
-        let vert_buffer = (frame_rect.height - POMO_HEIGHT) / 2;
-        let hor_buffer = (frame_rect.width - POMO_WIDTH) / 2;
+        let vert_buffer = if frame_rect.height < POMO_HEIGHT {
+            0
+        } else {
+            (frame_rect.height - POMO_HEIGHT) / 2
+        };
+        let hor_buffer = if frame_rect.width < POMO_WIDTH {
+            0
+        } else {
+            (frame_rect.width - POMO_WIDTH) / 2
+        };
 
         let vert_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -106,6 +114,7 @@ impl App {
                 .border_style(self.pomo.style()),
         )
         .alignment(Alignment::Center);
-        frame.render_widget(pomo_widget, hor_chunks[1])
+
+        frame.render_widget(pomo_widget, hor_chunks[1]);
     }
 }
