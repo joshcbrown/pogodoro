@@ -1,6 +1,7 @@
-use std::fmt;
-use std::time::Duration;
-use std::time::Instant;
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 use tui::style::{Color, Style};
 
 #[derive(Debug)]
