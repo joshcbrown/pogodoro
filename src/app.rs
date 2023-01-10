@@ -22,9 +22,9 @@ impl Default for App {
         Self {
             running: true,
             pomo: Pomodoro::new(
-                Duration::from_secs(20 * 60),
-                Duration::from_secs(5 * 60),
-                Duration::from_secs(15 * 60),
+                Duration::from_secs(5),
+                Duration::from_secs(5),
+                Duration::from_secs(5),
             ),
         }
     }
@@ -57,9 +57,6 @@ impl App {
 
     /// Handles the tick event of the terminal.
     pub fn tick(&mut self) {
-        if let PomodoroState::LongBreak = self.pomo.state() {
-            self.running = false
-        }
         self.pomo.update()
     }
 

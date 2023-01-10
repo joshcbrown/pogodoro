@@ -1,3 +1,4 @@
+use notify_rust::Notification;
 use std::{
     fmt,
     time::{Duration, Instant},
@@ -55,6 +56,21 @@ pub enum PomodoroState {
     LongBreak,
 }
 
+impl PomodoroState {
+    fn notify(&self) {
+        let message = match self {
+            Self::Work => "time to work!",
+            Self::ShortBreak => "short break time! alright man",
+            Self::LongBreak => "ALRIGHT! long break time man",
+        };
+        Notification::new()
+            .summary("pogodoro")
+            .body(message)
+            .show()
+            .unwrap();
+    }
+}
+
 impl fmt::Display for PomodoroState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -109,6 +125,7 @@ impl Pomodoro {
                     (PomodoroState::Work, Timer::new(self.work_dur))
                 }
             };
+            self.state.notify();
             self.current.update();
         }
     }
