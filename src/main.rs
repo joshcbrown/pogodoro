@@ -1,5 +1,6 @@
 use clap::Parser;
 use pogodoro::app::{App, AppResult};
+use pogodoro::args::Cli;
 use pogodoro::event::{Event, EventHandler};
 use pogodoro::handler::handle_key_events;
 use pogodoro::tui::Tui;
@@ -7,32 +8,11 @@ use std::io;
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
-#[derive(Parser)]
-#[command(
-    author,
-    version,
-    about = "A poggers-as-hell terminal UI pomodoro timer"
-)]
-struct Args {
-    /// Duration of each working session in minutes
-    #[arg(short, long)]
-    work_dur: Option<u64>,
-    /// Duration of each short break in minutes
-    #[arg(short, long)]
-    short_break_dur: Option<u64>,
-    /// Duration of each long break in minutes
-    #[arg(short, long)]
-    long_break_dur: Option<u64>,
-}
-
 fn main() -> AppResult<()> {
     // Read command line args
-    let args = Args::parse();
+    let args = Cli::parse();
     // Create an application.
-    let vec: Option<Vec<u64>> = [args.work_dur, args.short_break_dur, args.long_break_dur]
-        .into_iter()
-        .collect();
-    let mut app = App::new(vec).unwrap();
+    let mut app = App::new(args.command).unwrap();
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());

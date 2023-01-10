@@ -10,5 +10,6 @@ pub mod tui;
 /// Event handler.
 pub mod handler;
 
+pub mod args;
 pub mod pomodoro;
 mod states;

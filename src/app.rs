@@ -1,3 +1,4 @@
+use crate::args::{Commands, Start};
 use crate::states::WorkingState;
 use std::error;
 use std::io::Stderr;
@@ -35,22 +36,20 @@ impl Default for App {
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new(ops: Option<Vec<u64>>) -> AppResult<Self> {
+    pub fn new(ops: Option<Commands>) -> AppResult<Self> {
         match ops {
-            Some(vec) => {
-                if let [work_dur, short_break_dur, long_break_dur] = &vec[..] {
-                    Ok(Self {
-                        running: true,
-                        state: Box::new(WorkingState::new(
-                            Duration::from_secs(work_dur * 60),
-                            Duration::from_secs(short_break_dur * 60),
-                            Duration::from_secs(long_break_dur * 60),
-                        )),
-                    })
-                } else {
-                    Err("expected vector of length 3".into())
-                }
-            }
+            Some(Commands::Start(Start {
+                work_dur,
+                short_break_dur,
+                long_break_dur,
+            })) => Ok(Self {
+                running: true,
+                state: Box::new(WorkingState::new(
+                    Duration::from_secs(work_dur * 60),
+                    Duration::from_secs(short_break_dur * 60),
+                    Duration::from_secs(long_break_dur * 60),
+                )),
+            }),
             None => Ok(Self::default()),
         }
     }
