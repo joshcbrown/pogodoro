@@ -2,8 +2,8 @@ use crate::app::{App, AppResult};
 use crate::event::EventHandler;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use std::io;
-use tui::backend::Backend;
+use std::io::{self, Stderr};
+use tui::backend::{Backend, CrosstermBackend};
 use tui::Terminal;
 
 /// Representation of a terminal user interface.
@@ -18,9 +18,10 @@ pub struct Tui<B: Backend> {
     pub events: EventHandler,
 }
 
-impl<B: Backend> Tui<B> {
+type C = CrosstermBackend<Stderr>;
+impl Tui<C> {
     /// Constructs a new instance of [`Tui`].
-    pub fn new(terminal: Terminal<B>, events: EventHandler) -> Self {
+    pub fn new(terminal: Terminal<C>, events: EventHandler) -> Self {
         Self { terminal, events }
     }
 
