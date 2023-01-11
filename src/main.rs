@@ -1,8 +1,7 @@
 use clap::Parser;
-use pogodoro::app::{App, AppResult};
 use pogodoro::args::Cli;
 use pogodoro::event::{Event, EventHandler};
-use pogodoro::handler::handle_key_events;
+use pogodoro::states::{AppResult, AppState};
 use pogodoro::tui::Tui;
 use std::io;
 use tui::backend::CrosstermBackend;
@@ -12,7 +11,7 @@ fn main() -> AppResult<()> {
     // Read command line args
     let args = Cli::parse();
     // Create an application.
-    let mut app = App::new(args.command).unwrap();
+    let mut app = AppState::new(args.command);
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());
@@ -22,13 +21,17 @@ fn main() -> AppResult<()> {
     tui.init()?;
 
     // Start the main loop.
-    while app.running {
+    loop {
+        if let AppState::Finished = app {
+            break;
+        }
         // Render the user interface.
         tui.draw(&mut app)?;
         // Handle events.
+
         match tui.events.next()? {
             Event::Tick => app.tick(),
-            Event::Key(key_event) => handle_key_events(key_event, &mut app)?,
+            Event::Key(key_event) => app.handle_key_event(key_event),
             Event::Mouse(_) => {}
             Event::Resize(_, _) => {}
         }

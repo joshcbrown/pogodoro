@@ -3,7 +3,13 @@ use std::{
     fmt,
     time::{Duration, Instant},
 };
-use tui::style::{Color, Style};
+use tui::{
+    backend::Backend,
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Style},
+    widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
+};
 
 #[derive(Debug)]
 pub struct Timer {
@@ -95,6 +101,9 @@ pub struct Pomodoro {
     pomos_completed: u16,
 }
 
+const POMO_HEIGHT: u16 = 6;
+const POMO_WIDTH: u16 = 25;
+
 impl Pomodoro {
     pub fn new(work_dur: Duration, short_break_dur: Duration, long_break_dur: Duration) -> Self {
         let mut first_timer = Timer::new(work_dur);
@@ -144,5 +153,46 @@ impl Pomodoro {
 
     pub fn state(&self) -> &PomodoroState {
         &self.state
+    }
+
+    pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
+        let frame_rect = frame.size();
+        let vert_buffer = frame_rect.height.checked_sub(POMO_HEIGHT).unwrap_or(0) / 2;
+        let hor_buffer = frame_rect.width.checked_sub(POMO_WIDTH).unwrap_or(0) / 2;
+
+        let vert_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(vert_buffer),
+                Constraint::Length(POMO_HEIGHT),
+                Constraint::Min(vert_buffer),
+            ])
+            .split(frame.size());
+
+        let hor_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(hor_buffer),
+                Constraint::Length(POMO_WIDTH),
+                Constraint::Min(hor_buffer),
+            ])
+            .split(vert_chunks[1]);
+
+        let pomo_widget = Paragraph::new(format!(
+            "Remaining: {}\nFinished: {}\n\n[q]uit",
+            self.current,
+            self.pomos_completed()
+        ))
+        .block(
+            Block::default()
+                .title(format!("Pogodoro — {}", self.state()))
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(self.style()),
+        )
+        .alignment(Alignment::Center);
+
+        frame.render_widget(pomo_widget, hor_chunks[1]);
     }
 }

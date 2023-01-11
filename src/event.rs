@@ -1,4 +1,4 @@
-use crate::app::AppResult;
+use crate::states::AppResult;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use std::sync::mpsc;
 use std::thread;
