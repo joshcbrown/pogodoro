@@ -704,6 +704,7 @@ dependencies = [
  "crossterm",
  "notify-rust",
  "tui",
+ "unicode-width",
 ]
 
 [[package]]

@@ -24,9 +24,9 @@ impl AppState {
                 short_break_dur,
                 long_break_dur,
             })) => Self::Working(Pomodoro::new(
-                Duration::from_secs(work_dur),
-                Duration::from_secs(short_break_dur),
-                Duration::from_secs(long_break_dur),
+                Duration::from_secs(work_dur * 60),
+                Duration::from_secs(short_break_dur * 60),
+                Duration::from_secs(long_break_dur * 60),
             )),
 
             None => Self::Tasks(TasksState::new()),
@@ -41,11 +41,17 @@ impl AppState {
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Esc
-            || key.code == KeyCode::Char('q')
-            || (key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL)
-        {
+        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
             *self = Self::Finished
+        }
+        if let Self::Tasks(tasks) = self {
+            if tasks.should_finish(&key) {
+                *self = Self::Finished
+            }
+        }
+        match self {
+            Self::Tasks(tasks) => tasks.handle_key_event(key),
+            _ => {}
         }
     }
 
