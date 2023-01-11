@@ -1,5 +1,6 @@
 use crate::args::{Commands, Start};
-use crate::states::WorkingState;
+use crate::states::{TasksState, WorkingState};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::error;
 use std::io::Stderr;
 use std::time::Duration;
@@ -11,7 +12,13 @@ pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 pub trait AppState {
     fn render(&mut self, frame: &mut Frame<'_, CrosstermBackend<Stderr>>);
-    fn update(&mut self);
+    fn tick(&mut self);
+    fn is_finish_key(&self, key: &KeyEvent) -> bool {
+        key.code == KeyCode::Esc
+            || key.code == KeyCode::Char('q')
+            || (key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL)
+    }
+    fn handle_key_event(&mut self, key: KeyEvent);
 }
 
 /// Application.
@@ -25,11 +32,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             running: true,
-            state: Box::new(WorkingState::new(
-                Duration::from_secs(5),
-                Duration::from_secs(5),
-                Duration::from_secs(5),
-            )),
+            state: Box::new(TasksState::new()),
         }
     }
 }
@@ -56,7 +59,14 @@ impl App {
 
     /// Handles the tick event of the terminal.
     pub fn tick(&mut self) {
-        self.state.update()
+        self.state.tick()
+    }
+
+    pub fn handle_key_event(&mut self, key: KeyEvent) {
+        if self.state.is_finish_key(&key) {
+            self.running = false;
+            return;
+        }
     }
 
     /// Renders the user interface widgets.
