@@ -7,8 +7,9 @@ use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragr
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
 
-struct Task {
-    description: String,
+#[derive(Clone)]
+pub struct Task {
+    pub desc: String,
 }
 
 pub struct TasksState {
@@ -56,7 +57,7 @@ impl TasksState {
             .tasks
             .items
             .iter()
-            .map(|task| ListItem::new(vec![Spans::from(&task.description[..])]))
+            .map(|task| ListItem::new(vec![Spans::from(&task.desc[..])]))
             .collect();
 
         let task_list = List::new(task_list)
@@ -85,12 +86,17 @@ impl TasksState {
         }
     }
 
-    pub fn handle_key_event(&mut self, key: KeyEvent) {
+    pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
         match self.input_state {
             InputState::Normal => match key.code {
                 KeyCode::Char('i') => self.input_state = InputState::Insert,
                 KeyCode::Down | KeyCode::Char('j') => self.tasks.next(),
                 KeyCode::Up | KeyCode::Char('k') => self.tasks.previous(),
+                KeyCode::Enter => {
+                    if let Some(n) = self.tasks.state.selected() {
+                        return Some(self.tasks.items[n].clone());
+                    }
+                }
                 _ => {}
             },
             InputState::Insert => {
@@ -98,7 +104,7 @@ impl TasksState {
                     KeyCode::Char(c) => self.input.push(c),
                     KeyCode::Esc => self.input_state = InputState::Normal,
                     KeyCode::Enter => self.tasks.items.push(Task {
-                        description: self.input.drain(..).collect(),
+                        desc: self.input.drain(..).collect(),
                     }),
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -109,10 +115,12 @@ impl TasksState {
                     self.input = String::new()
                 };
             }
-        }
+        };
+        None
     }
 }
 
+/// struct courtesy of tui-rs's demo
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
@@ -134,30 +142,40 @@ impl<T> StatefulList<T> {
     }
 
     pub fn next(&mut self) {
-        let i = match self.state.selected() {
+        self.state.select(match self.state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
-                    0
+                    Some(0)
                 } else {
-                    i + 1
+                    Some(i + 1)
                 }
             }
-            None => 0,
-        };
-        self.state.select(Some(i));
+            None => {
+                if self.items.len() > 0 {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
+        })
     }
 
     pub fn previous(&mut self) {
-        let i = match self.state.selected() {
+        self.state.select(match self.state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.items.len() - 1
+                    Some(self.items.len() - 1)
                 } else {
-                    i - 1
+                    Some(i - 1)
                 }
             }
-            None => 0,
-        };
-        self.state.select(Some(i));
+            None => {
+                if self.items.len() > 0 {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
+        });
     }
 }

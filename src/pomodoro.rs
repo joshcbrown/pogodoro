@@ -1,3 +1,4 @@
+use crate::tasks::Task;
 use notify_rust::Notification;
 use std::{
     fmt,
@@ -94,6 +95,7 @@ impl fmt::Display for PomodoroState {
 #[derive(Debug)]
 pub struct Pomodoro {
     pub current: Timer,
+    desc: Option<String>,
     work_dur: Duration,
     short_break_dur: Duration,
     long_break_dur: Duration,
@@ -110,11 +112,26 @@ impl Pomodoro {
         first_timer.update();
         Self {
             current: first_timer,
+            desc: None,
             state: PomodoroState::Work,
             pomos_completed: 0,
             work_dur,
             short_break_dur,
             long_break_dur,
+        }
+    }
+
+    pub fn from_task(task: Task) -> Self {
+        let mut first_timer = Timer::new(Duration::from_secs(60 * 25));
+        first_timer.update();
+        Self {
+            current: first_timer,
+            desc: Some(task.desc),
+            state: PomodoroState::Work,
+            pomos_completed: 0,
+            work_dur: Duration::from_secs(60 * 25),
+            short_break_dur: Duration::from_secs(60 * 5),
+            long_break_dur: Duration::from_secs(60 * 15),
         }
     }
 
@@ -160,11 +177,17 @@ impl Pomodoro {
         let vert_buffer = frame_rect.height.checked_sub(POMO_HEIGHT).unwrap_or(0) / 2;
         let hor_buffer = frame_rect.width.checked_sub(POMO_WIDTH).unwrap_or(0) / 2;
 
+        let height = if let Some(_) = self.desc {
+            POMO_HEIGHT + 1
+        } else {
+            POMO_HEIGHT
+        };
+
         let vert_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(vert_buffer),
-                Constraint::Length(POMO_HEIGHT),
+                Constraint::Length(height),
                 Constraint::Min(vert_buffer),
             ])
             .split(frame.size());
@@ -178,20 +201,31 @@ impl Pomodoro {
             ])
             .split(vert_chunks[1]);
 
-        let pomo_widget = Paragraph::new(format!(
-            "Remaining: {}\nFinished: {}\n\n[q]uit",
-            self.current,
-            self.pomos_completed()
-        ))
-        .block(
-            Block::default()
-                .title(format!("Pogodoro — {}", self.state()))
-                .title_alignment(Alignment::Center)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(self.style()),
-        )
-        .alignment(Alignment::Center);
+        let pomo_text = if let Some(desc) = &self.desc {
+            format!(
+                "Working on: {}\nRemaining: {}\nFinished: {}\n\n [q]uit",
+                desc,
+                self.current,
+                self.pomos_completed()
+            )
+        } else {
+            format!(
+                "Remaining: {}\nFinished: {}\n\n[q]uit",
+                self.current,
+                self.pomos_completed()
+            )
+        };
+
+        let pomo_widget = Paragraph::new(pomo_text)
+            .block(
+                Block::default()
+                    .title(format!("Pogodoro — {}", self.state()))
+                    .title_alignment(Alignment::Center)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(self.style()),
+            )
+            .alignment(Alignment::Center);
 
         frame.render_widget(pomo_widget, hor_chunks[1]);
     }

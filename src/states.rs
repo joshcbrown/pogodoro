@@ -50,7 +50,11 @@ impl AppState {
             }
         }
         match self {
-            Self::Tasks(tasks) => tasks.handle_key_event(key),
+            Self::Tasks(tasks) => {
+                if let Some(task) = tasks.handle_key_event(key) {
+                    *self = Self::Working(Pomodoro::from_task(task))
+                }
+            }
             _ => {}
         }
     }
