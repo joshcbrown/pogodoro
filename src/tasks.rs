@@ -14,7 +14,7 @@ pub struct Task {
 
 pub struct TasksState {
     tasks: StatefulList<Task>,
-    input: String,
+    input: UserInput,
     input_state: InputState,
 }
 
@@ -27,7 +27,7 @@ impl TasksState {
     pub fn new() -> Self {
         Self {
             tasks: StatefulList::new(),
-            input: String::new(),
+            input: UserInput::new("Add a task".into()),
             input_state: InputState::Normal,
         }
     }
@@ -41,17 +41,7 @@ impl TasksState {
             .margin(2)
             .split(frame.size());
 
-        let input_text = Paragraph::new(self.input.as_ref())
-            .style(match self.input_state {
-                InputState::Insert => Style::default().fg(Color::Yellow),
-                InputState::Normal => Style::default(),
-            })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title("Add a task"),
-            );
+        let input_text = self.input.to_widget();
 
         let task_list: Vec<ListItem> = self
             .tasks
@@ -104,7 +94,7 @@ impl TasksState {
                     KeyCode::Char(c) => self.input.push(c),
                     KeyCode::Esc => self.input_state = InputState::Normal,
                     KeyCode::Enter => self.tasks.items.push(Task {
-                        desc: self.input.drain(..).collect(),
+                        desc: self.input.text.drain(..).collect(),
                     }),
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -112,11 +102,53 @@ impl TasksState {
                     _ => {}
                 }
                 if key.code == KeyCode::Char('u') && key.modifiers == KeyModifiers::CONTROL {
-                    self.input = String::new()
+                    self.input.text = String::new()
                 };
             }
         };
         None
+    }
+}
+
+struct UserInput {
+    title: String,
+    text: String,
+    input_state: InputState,
+}
+
+impl UserInput {
+    fn new(title: String) -> Self {
+        Self {
+            title,
+            text: String::new(),
+            input_state: InputState::Normal,
+        }
+    }
+
+    fn to_widget(&self) -> Paragraph {
+        Paragraph::new(self.text.as_ref())
+            .style(match self.input_state {
+                InputState::Insert => Style::default().fg(Color::Yellow),
+                InputState::Normal => Style::default(),
+            })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(self.title.as_str()),
+            )
+    }
+
+    fn width(&self) -> usize {
+        self.text.width()
+    }
+
+    fn pop(&mut self) -> Option<char> {
+        self.text.pop()
+    }
+
+    fn push(&mut self, c: char) {
+        self.text.push(c)
     }
 }
 

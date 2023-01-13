@@ -1,6 +1,7 @@
 use crate::tasks::Task;
 use notify_rust::Notification;
 use std::{
+    cmp::max,
     fmt,
     time::{Duration, Instant},
 };
@@ -11,6 +12,7 @@ use tui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug)]
 pub struct Timer {
@@ -174,20 +176,21 @@ impl Pomodoro {
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         let frame_rect = frame.size();
-        let vert_buffer = frame_rect.height.checked_sub(POMO_HEIGHT).unwrap_or(0) / 2;
-        let hor_buffer = frame_rect.width.checked_sub(POMO_WIDTH).unwrap_or(0) / 2;
 
-        let height = if let Some(_) = self.desc {
-            POMO_HEIGHT + 1
+        let (vert_height, hor_height) = if let Some(desc) = &self.desc {
+            (POMO_HEIGHT + 1, max(desc.width() as u16, POMO_WIDTH))
         } else {
-            POMO_HEIGHT
+            (POMO_HEIGHT, POMO_WIDTH)
         };
+
+        let vert_buffer = frame_rect.height.checked_sub(vert_height).unwrap_or(0) / 2;
+        let hor_buffer = frame_rect.width.checked_sub(hor_height).unwrap_or(0) / 2;
 
         let vert_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(vert_buffer),
-                Constraint::Length(height),
+                Constraint::Length(vert_height),
                 Constraint::Min(vert_buffer),
             ])
             .split(frame.size());
@@ -196,7 +199,7 @@ impl Pomodoro {
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Min(hor_buffer),
-                Constraint::Length(POMO_WIDTH),
+                Constraint::Length(hor_height),
                 Constraint::Min(hor_buffer),
             ])
             .split(vert_chunks[1]);
