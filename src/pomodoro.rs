@@ -1,4 +1,5 @@
 use crate::tasks::Task;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use notify_rust::Notification;
 use std::{
     cmp::max,
@@ -19,6 +20,7 @@ pub struct Timer {
     start_time: Instant,
     dur: Duration,
     elapsed: Duration,
+    paused: bool,
 }
 
 impl Timer {
@@ -27,17 +29,30 @@ impl Timer {
             dur,
             start_time: Instant::now(),
             elapsed: Duration::from_secs(0),
+            paused: false,
         }
     }
 
     fn update(&mut self) {
         // might check here later if timer is over
-        self.elapsed = self.start_time.elapsed();
+        if !self.paused {
+            self.elapsed = self.start_time.elapsed();
+        }
     }
 
     pub fn is_finished(&self) -> bool {
-        // println!("{:#?} {:#?}", self.total_time, self.elapsed);
         self.elapsed >= self.dur
+    }
+
+    pub fn toggle_pause(&mut self) {
+        if !self.paused {
+            self.paused = true;
+            return;
+        }
+        self.paused = false;
+        self.dur -= self.elapsed;
+        self.start_time = Instant::now();
+        self.update()
     }
 }
 
@@ -97,10 +112,7 @@ impl fmt::Display for PomodoroState {
 #[derive(Debug)]
 pub struct Pomodoro {
     pub current: Timer,
-    desc: Option<String>,
-    work_dur: Duration,
-    short_break_dur: Duration,
-    long_break_dur: Duration,
+    task: Task,
     state: PomodoroState,
     pomos_completed: u16,
 }
@@ -108,33 +120,23 @@ pub struct Pomodoro {
 const POMO_HEIGHT: u16 = 6;
 const POMO_WIDTH: u16 = 25;
 
-impl Pomodoro {
-    pub fn new(work_dur: Duration, short_break_dur: Duration, long_break_dur: Duration) -> Self {
-        let mut first_timer = Timer::new(work_dur);
+impl Default for Pomodoro {
+    fn default() -> Self {
+        let task = Task::default();
+        let mut first_timer = Timer::new(task.work_dur);
         first_timer.update();
         Self {
             current: first_timer,
-            desc: None,
+            task: Task::default(),
             state: PomodoroState::Work,
             pomos_completed: 0,
-            work_dur,
-            short_break_dur,
-            long_break_dur,
         }
     }
+}
 
-    pub fn from_task(task: Task) -> Self {
-        let mut first_timer = Timer::new(Duration::from_secs(60 * 25));
-        first_timer.update();
-        Self {
-            current: first_timer,
-            desc: Some(task.desc),
-            state: PomodoroState::Work,
-            pomos_completed: 0,
-            work_dur: Duration::from_secs(60 * 25),
-            short_break_dur: Duration::from_secs(60 * 5),
-            long_break_dur: Duration::from_secs(60 * 15),
-        }
+impl Pomodoro {
+    pub fn assign(self, task: Task) -> Self {
+        Self { task, ..self }
     }
 
     pub fn update(&mut self) {
@@ -144,13 +146,19 @@ impl Pomodoro {
                 PomodoroState::Work => {
                     self.pomos_completed += 1;
                     if self.pomos_completed % 4 == 0 {
-                        (PomodoroState::LongBreak, Timer::new(self.long_break_dur))
+                        (
+                            PomodoroState::LongBreak,
+                            Timer::new(self.task.long_break_dur),
+                        )
                     } else {
-                        (PomodoroState::ShortBreak, Timer::new(self.short_break_dur))
+                        (
+                            PomodoroState::ShortBreak,
+                            Timer::new(self.task.short_break_dur),
+                        )
                     }
                 }
                 PomodoroState::ShortBreak | PomodoroState::LongBreak => {
-                    (PomodoroState::Work, Timer::new(self.work_dur))
+                    (PomodoroState::Work, Timer::new(self.task.work_dur))
                 }
             };
             self.state.notify();
@@ -166,25 +174,20 @@ impl Pomodoro {
         }
     }
 
-    pub fn pomos_completed(&self) -> u16 {
-        self.pomos_completed
-    }
-
-    pub fn state(&self) -> &PomodoroState {
-        &self.state
-    }
-
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         let frame_rect = frame.size();
 
-        let (vert_height, hor_height) = if let Some(desc) = &self.desc {
-            (POMO_HEIGHT + 1, max(desc.width() as u16, POMO_WIDTH))
+        let (vert_height, hor_height) = if let Some(desc) = &self.task.desc {
+            (
+                POMO_HEIGHT + 1,
+                max((desc.width() + "Remaining: ".width()) as u16, POMO_WIDTH),
+            )
         } else {
             (POMO_HEIGHT, POMO_WIDTH)
         };
 
-        let vert_buffer = frame_rect.height.checked_sub(vert_height).unwrap_or(0) / 2;
-        let hor_buffer = frame_rect.width.checked_sub(hor_height).unwrap_or(0) / 2;
+        let vert_buffer = frame_rect.height.saturating_sub(vert_height) / 2;
+        let hor_buffer = frame_rect.width.saturating_sub(hor_height) / 2;
 
         let vert_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -204,25 +207,27 @@ impl Pomodoro {
             ])
             .split(vert_chunks[1]);
 
-        let pomo_text = if let Some(desc) = &self.desc {
-            format!(
-                "Working on: {}\nRemaining: {}\nFinished: {}\n\n [q]uit",
-                desc,
-                self.current,
-                self.pomos_completed()
-            )
+        let pause_text = if self.current.paused {
+            "un[p]ause"
         } else {
-            format!(
-                "Remaining: {}\nFinished: {}\n\n[q]uit",
-                self.current,
-                self.pomos_completed()
-            )
+            "[p]ause"
         };
+
+        let task_text = if let Some(desc) = &self.task.desc {
+            format!("Working on: {}\n", desc)
+        } else {
+            "".into()
+        };
+
+        let pomo_text = format!(
+            "{}Remaining: {}\nFinished: {}\n\n [q]uit {}",
+            task_text, self.current, self.pomos_completed, pause_text
+        );
 
         let pomo_widget = Paragraph::new(pomo_text)
             .block(
                 Block::default()
-                    .title(format!("Pogodoro — {}", self.state()))
+                    .title(format!("Pogodoro — {}", self.state))
                     .title_alignment(Alignment::Center)
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
@@ -231,5 +236,19 @@ impl Pomodoro {
             .alignment(Alignment::Center);
 
         frame.render_widget(pomo_widget, hor_chunks[1]);
+    }
+
+    pub fn should_finish(&self, key: &KeyEvent) -> bool {
+        key.code == KeyCode::Char('q') || key.code == KeyCode::Esc
+    }
+
+    pub fn handle_key_event(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('p') => self.current.toggle_pause(),
+            KeyCode::Enter => {
+                // TODO: make this return to tasks page
+            }
+            _ => {}
+        }
     }
 }

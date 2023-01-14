@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use tui::backend::Backend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -7,9 +9,23 @@ use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragr
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Task {
-    pub desc: String,
+    pub desc: Option<String>,
+    pub work_dur: Duration,
+    pub short_break_dur: Duration,
+    pub long_break_dur: Duration,
+}
+
+impl Default for Task {
+    fn default() -> Self {
+        Self {
+            desc: None,
+            work_dur: Duration::from_secs(60 * 25),
+            short_break_dur: Duration::from_secs(60 * 5),
+            long_break_dur: Duration::from_secs(60 * 15),
+        }
+    }
 }
 
 pub struct TasksState {
@@ -23,10 +39,10 @@ pub enum InputState {
     Normal,
 }
 
-impl TasksState {
-    pub fn new() -> Self {
+impl Default for TasksState {
+    fn default() -> Self {
         Self {
-            tasks: StatefulList::new(),
+            tasks: StatefulList::default(),
             input: UserInput::new("Add a task".into()),
             input_state: InputState::Normal,
         }
@@ -47,7 +63,7 @@ impl TasksState {
             .tasks
             .items
             .iter()
-            .map(|task| ListItem::new(vec![Spans::from(&task.desc[..])]))
+            .map(|task| ListItem::new(vec![Spans::from(task.desc.as_ref().unwrap().as_ref())]))
             .collect();
 
         let task_list = List::new(task_list)
@@ -94,7 +110,8 @@ impl TasksState {
                     KeyCode::Char(c) => self.input.push(c),
                     KeyCode::Esc => self.input_state = InputState::Normal,
                     KeyCode::Enter => self.tasks.items.push(Task {
-                        desc: self.input.text.drain(..).collect(),
+                        desc: Some(self.input.text.drain(..).collect()),
+                        ..Task::default()
                     }),
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -158,18 +175,20 @@ pub struct StatefulList<T> {
     pub items: Vec<T>,
 }
 
+impl<T> Default for StatefulList<T> {
+    fn default() -> Self {
+        Self {
+            state: ListState::default(),
+            items: Vec::new(),
+        }
+    }
+}
+
 impl<T> StatefulList<T> {
     pub fn with_items(items: Vec<T>) -> Self {
         StatefulList {
             state: ListState::default(),
             items,
-        }
-    }
-
-    pub fn new() -> Self {
-        Self {
-            state: ListState::default(),
-            items: Vec::new(),
         }
     }
 
@@ -183,7 +202,7 @@ impl<T> StatefulList<T> {
                 }
             }
             None => {
-                if self.items.len() > 0 {
+                if !self.items.is_empty() {
                     Some(0)
                 } else {
                     None
@@ -202,7 +221,7 @@ impl<T> StatefulList<T> {
                 }
             }
             None => {
-                if self.items.len() > 0 {
+                if !self.items.is_empty() {
                     Some(0)
                 } else {
                     None

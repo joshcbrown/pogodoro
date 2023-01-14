@@ -1,3 +1,4 @@
+use crate::tasks::Task;
 use crate::tasks::TasksState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::error;
@@ -23,20 +24,20 @@ impl AppState {
                 work_dur,
                 short_break_dur,
                 long_break_dur,
-            })) => Self::Working(Pomodoro::new(
-                Duration::from_secs(work_dur * 60),
-                Duration::from_secs(short_break_dur * 60),
-                Duration::from_secs(long_break_dur * 60),
-            )),
+            })) => Self::Working(Pomodoro::default().assign(Task {
+                desc: None,
+                work_dur: Duration::from_secs(work_dur * 60),
+                short_break_dur: Duration::from_secs(short_break_dur * 60),
+                long_break_dur: Duration::from_secs(long_break_dur * 60),
+            })),
 
-            None => Self::Tasks(TasksState::new()),
+            None => Self::Tasks(TasksState::default()),
         }
     }
 
     pub fn tick(&mut self) {
-        match self {
-            Self::Working(pomo) => pomo.update(),
-            _ => {}
+        if let Self::Working(pomo) = self {
+            pomo.update()
         }
     }
 
@@ -44,18 +45,25 @@ impl AppState {
         if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
             *self = Self::Finished
         }
-        if let Self::Tasks(tasks) = self {
-            if tasks.should_finish(&key) {
-                *self = Self::Finished
-            }
-        }
         match self {
             Self::Tasks(tasks) => {
+                if tasks.should_finish(&key) {
+                    *self = Self::Finished;
+                    return;
+                }
+                // check if user has chosen some task, move on to pomo if so
                 if let Some(task) = tasks.handle_key_event(key) {
-                    *self = Self::Working(Pomodoro::from_task(task))
+                    *self = Self::Working(Pomodoro::default().assign(task))
                 }
             }
-            _ => {}
+            Self::Working(pomo) => {
+                if pomo.should_finish(&key) {
+                    *self = Self::Finished;
+                    return;
+                }
+                pomo.handle_key_event(key)
+            }
+            Self::Finished => {}
         }
     }
 
