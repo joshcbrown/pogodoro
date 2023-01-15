@@ -112,9 +112,9 @@ impl fmt::Display for PomodoroState {
 #[derive(Debug)]
 pub struct Pomodoro {
     pub current: Timer,
-    task: Task,
-    state: PomodoroState,
-    pomos_completed: u16,
+    pub task: Task,
+    pub state: PomodoroState,
+    pub pomos_completed: u16,
 }
 
 const POMO_HEIGHT: u16 = 6;
@@ -136,34 +136,44 @@ impl Default for Pomodoro {
 
 impl Pomodoro {
     pub fn assign(self, task: Task) -> Self {
-        Self { task, ..self }
+        let mut current = Timer::new(task.work_dur);
+        current.update();
+        Self {
+            task,
+            current,
+            ..self
+        }
     }
 
     pub fn update(&mut self) {
         self.current.update();
         if self.current.is_finished() {
-            (self.state, self.current) = match self.state {
-                PomodoroState::Work => {
-                    self.pomos_completed += 1;
-                    if self.pomos_completed % 4 == 0 {
-                        (
-                            PomodoroState::LongBreak,
-                            Timer::new(self.task.long_break_dur),
-                        )
-                    } else {
-                        (
-                            PomodoroState::ShortBreak,
-                            Timer::new(self.task.short_break_dur),
-                        )
-                    }
-                }
-                PomodoroState::ShortBreak | PomodoroState::LongBreak => {
-                    (PomodoroState::Work, Timer::new(self.task.work_dur))
-                }
-            };
-            self.state.notify();
-            self.current.update();
+            self.change_timers()
         }
+    }
+
+    fn change_timers(&mut self) {
+        (self.state, self.current) = match self.state {
+            PomodoroState::Work => {
+                self.pomos_completed += 1;
+                if self.pomos_completed % 4 == 0 {
+                    (
+                        PomodoroState::LongBreak,
+                        Timer::new(self.task.long_break_dur),
+                    )
+                } else {
+                    (
+                        PomodoroState::ShortBreak,
+                        Timer::new(self.task.short_break_dur),
+                    )
+                }
+            }
+            PomodoroState::ShortBreak | PomodoroState::LongBreak => {
+                (PomodoroState::Work, Timer::new(self.task.work_dur))
+            }
+        };
+        self.state.notify();
+        self.current.update();
     }
 
     pub fn style(&self) -> Style {
@@ -220,7 +230,7 @@ impl Pomodoro {
         };
 
         let pomo_text = format!(
-            "{}Remaining: {}\nFinished: {}\n\n [q]uit {}",
+            "{}Remaining: {}\nFinished: {}\n\n[n]ext [q]uit {}",
             task_text, self.current, self.pomos_completed, pause_text
         );
 
@@ -245,6 +255,7 @@ impl Pomodoro {
     pub fn handle_key_event(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
+            KeyCode::Char('n') => self.change_timers(),
             KeyCode::Enter => {
                 // TODO: make this return to tasks page
             }

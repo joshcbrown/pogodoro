@@ -1,8 +1,9 @@
+use std::iter::repeat;
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use tui::backend::Backend;
-use tui::layout::{Constraint, Direction, Layout};
+use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
 use tui::text::Spans;
 use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
@@ -30,7 +31,7 @@ impl Default for Task {
 
 pub struct TasksState {
     tasks: StatefulList<Task>,
-    input: UserInput,
+    input: TaskInput,
     input_state: InputState,
 }
 
@@ -43,7 +44,7 @@ impl Default for TasksState {
     fn default() -> Self {
         Self {
             tasks: StatefulList::default(),
-            input: UserInput::new("Add a task".into()),
+            input: TaskInput::default(),
             input_state: InputState::Normal,
         }
     }
@@ -57,12 +58,12 @@ impl TasksState {
             .margin(2)
             .split(frame.size());
 
-        let input_text = self.input.to_widget();
-
         let task_list: Vec<ListItem> = self
             .tasks
             .items
             .iter()
+            // unwrapping is ok here because the only way to be on this screen
+            // is to have a valid description
             .map(|task| ListItem::new(vec![Spans::from(task.desc.as_ref().unwrap().as_ref())]))
             .collect();
 
@@ -76,26 +77,26 @@ impl TasksState {
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol("> ");
 
-        frame.render_widget(input_text, chunks[0]);
+        self.input.render_on(frame, chunks[0]);
         frame.render_stateful_widget(task_list, chunks[1], &mut self.tasks.state);
-
-        if let InputState::Insert = self.input_state {
-            frame.set_cursor(chunks[0].x + self.input.width() as u16 + 1, chunks[0].y + 1)
-        }
     }
 
     pub fn should_finish(&self, key: &KeyEvent) -> bool {
         if let InputState::Normal = self.input_state {
-            key.code == KeyCode::Char('q') || key.code == KeyCode::Esc
+            key.code == KeyCode::Char('q')
         } else {
             false
         }
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
+        // TODO: tidy
         match self.input_state {
             InputState::Normal => match key.code {
-                KeyCode::Char('i') => self.input_state = InputState::Insert,
+                KeyCode::Char('i') => {
+                    self.input_state = InputState::Insert;
+                    self.input.0.next()
+                }
                 KeyCode::Down | KeyCode::Char('j') => self.tasks.next(),
                 KeyCode::Up | KeyCode::Char('k') => self.tasks.previous(),
                 KeyCode::Enter => {
@@ -108,18 +109,21 @@ impl TasksState {
             InputState::Insert => {
                 match key.code {
                     KeyCode::Char(c) => self.input.push(c),
-                    KeyCode::Esc => self.input_state = InputState::Normal,
-                    KeyCode::Enter => self.tasks.items.push(Task {
-                        desc: Some(self.input.text.drain(..).collect()),
-                        ..Task::default()
-                    }),
+                    KeyCode::Esc => {
+                        self.input_state = InputState::Normal;
+                        self.input.0.focused = None
+                    }
+                    KeyCode::Tab => self.input.0.next(),
+                    // TODO: only accept non-empty descs
+                    KeyCode::Enter => self.tasks.items.push(self.input.get_task()),
                     KeyCode::Backspace => {
                         self.input.pop();
                     }
                     _ => {}
                 }
                 if key.code == KeyCode::Char('u') && key.modifiers == KeyModifiers::CONTROL {
-                    self.input.text = String::new()
+                    // TODO: fix this
+                    self.input.0.clear()
                 };
             }
         };
@@ -169,6 +173,135 @@ impl UserInput {
     }
 }
 
+#[derive(Default)]
+pub struct InputGroup {
+    inputs: Vec<UserInput>,
+    focused: Option<usize>,
+}
+
+impl InputGroup {
+    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
+        if self.inputs.is_empty() {
+            return;
+        }
+
+        let percentage = Constraint::Percentage(100 / self.inputs.len() as u16);
+        let sub_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                repeat(percentage)
+                    .take(self.inputs.len())
+                    .collect::<Vec<Constraint>>(),
+            )
+            .split(chunk);
+
+        for (input, sub_chunk) in self.inputs.iter().zip(&sub_chunks) {
+            frame.render_widget(input.to_widget(), *sub_chunk)
+        }
+
+        if self.focused.is_none() {
+            return;
+        }
+
+        let focused_idx = self.focused.unwrap();
+        let focused_input = &self.inputs[focused_idx];
+
+        frame.set_cursor(
+            sub_chunks[focused_idx].x + focused_input.width() as u16 + 1,
+            sub_chunks[focused_idx].y + 1,
+        )
+    }
+
+    fn next(&mut self) {
+        match self.focused {
+            None => {
+                self.focused = if !self.inputs.is_empty() {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
+            Some(n) => self.focused = Some((n + 1) % self.inputs.len()),
+        }
+    }
+
+    fn push(&mut self, c: char) {
+        if self.focused.is_none() {
+            return;
+        }
+
+        self.inputs[self.focused.unwrap()].push(c)
+    }
+
+    fn pop(&mut self) -> Option<char> {
+        self.focused?;
+        self.inputs[self.focused.unwrap()].pop()
+    }
+
+    fn clear(&mut self) {
+        if self.focused.is_none() {
+            return;
+        }
+
+        self.inputs[self.focused.unwrap()].text = String::new()
+    }
+}
+
+struct TaskInput(InputGroup);
+
+impl Default for TaskInput {
+    fn default() -> Self {
+        Self(InputGroup {
+            inputs: vec![
+                UserInput::new("Task name".into()),
+                UserInput::new("Work duration".into()),
+                UserInput::new("SB duration".into()),
+                UserInput::new("LB duration".into()),
+            ],
+            focused: None,
+        })
+    }
+}
+
+impl TaskInput {
+    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
+        self.0.render_on(frame, chunk)
+    }
+
+    fn push(&mut self, c: char) {
+        self.0.push(c)
+    }
+
+    fn pop(&mut self) -> Option<char> {
+        self.0.pop()
+    }
+
+    fn parse_dur(&mut self, i: usize, default: Duration) -> Duration {
+        let text: &mut String = &mut self.0.inputs[i].text;
+        if text.is_empty() {
+            default
+        } else {
+            match text.drain(..).collect::<String>().parse::<u64>() {
+                Ok(n) => Duration::from_secs(n * 60),
+                Err(_) => default,
+            }
+        }
+    }
+
+    fn get_task(&mut self) -> Task {
+        let default = Task::default();
+        let work_dur = self.parse_dur(1, default.work_dur);
+        let short_break_dur = self.parse_dur(2, default.short_break_dur);
+        let long_break_dur = self.parse_dur(3, default.short_break_dur);
+        Task {
+            desc: Some(self.0.inputs[0].text.drain(..).collect()),
+            work_dur,
+            short_break_dur,
+            long_break_dur,
+        }
+    }
+}
+
 /// struct courtesy of tui-rs's demo
 pub struct StatefulList<T> {
     pub state: ListState,
@@ -194,13 +327,7 @@ impl<T> StatefulList<T> {
 
     pub fn next(&mut self) {
         self.state.select(match self.state.selected() {
-            Some(i) => {
-                if i >= self.items.len() - 1 {
-                    Some(0)
-                } else {
-                    Some(i + 1)
-                }
-            }
+            Some(i) => Some((i + 1) % self.items.len()),
             None => {
                 if !self.items.is_empty() {
                     Some(0)
