@@ -12,6 +12,7 @@ fn main() -> AppResult<()> {
     let args = Cli::parse();
     // Create an application.
     let mut app = AppState::new(args.command);
+    AppState::setup_db();
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());

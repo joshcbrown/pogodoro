@@ -1,7 +1,9 @@
 use crate::tasks::Task;
 use crate::tasks::TasksState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use sqlx::{query, Connection, SqliteConnection};
 use std::error;
+use std::path::PathBuf;
 use std::time::Duration;
 use tui::backend::Backend;
 use tui::Frame;
@@ -17,7 +19,40 @@ pub enum AppState {
     Finished,
 }
 
+const CFG_PATH_STR: &'static str = ".config/pogodoro/";
+const DB_NAME: &'static str = "records.db";
+
 impl AppState {
+    pub fn cfg_path() -> PathBuf {
+        let mut path = dir::home_dir().unwrap();
+        path.push(CFG_PATH_STR);
+        path
+    }
+
+    pub async fn setup_db() -> Result<(), sqlx::Error> {
+        let mut path = Self::cfg_path();
+        std::fs::create_dir_all(&path).unwrap();
+        // redirect to db path
+        path.push(DB_NAME);
+
+        let mut connection = SqliteConnection::connect(path.to_str().unwrap()).await?;
+
+        sqlx::query!(
+            "
+CREATE TABLE IF NOT EXISTS task (
+    desc TEXT,
+    task_dur INTEGER NOT NULL,
+    short_break_dur INTEGER NOT NULL,
+    long_break_dur INTEGER NOT NULL,
+    completed INTEGER DEFAULT 0
+);  
+"
+        )
+        .execute(&mut connection).await?;
+        // connection.execute(query).unwrap();
+        Ok(())
+    }
+
     pub fn new(ops: Option<Commands>) -> Self {
         match ops {
             Some(Commands::Start(Start {
