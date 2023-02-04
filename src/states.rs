@@ -29,27 +29,31 @@ impl AppState {
         path
     }
 
-    pub async fn setup_db() -> Result<(), sqlx::Error> {
+    pub fn db_path() -> PathBuf {
         let mut path = Self::cfg_path();
-        std::fs::create_dir_all(&path).unwrap();
-        // redirect to db path
         path.push(DB_NAME);
+        path
+    }
+
+    pub async fn setup_db() -> Result<(), sqlx::Error> {
+        let path = Self::cfg_path();
+        std::fs::create_dir_all(&path).unwrap();
+        let path = Self::db_path();
 
         let mut connection = SqliteConnection::connect(path.to_str().unwrap()).await?;
 
         sqlx::query!(
             "
-CREATE TABLE IF NOT EXISTS task (
-    desc TEXT,
+CREATE TABLE IF NOT EXISTS tasks (
+    desc TEXT NOT NULL,
     task_dur INTEGER NOT NULL,
     short_break_dur INTEGER NOT NULL,
     long_break_dur INTEGER NOT NULL,
     completed INTEGER DEFAULT 0
-);  
+);
 "
         )
         .execute(&mut connection).await?;
-        // connection.execute(query).unwrap();
         Ok(())
     }
 
@@ -83,6 +87,7 @@ CREATE TABLE IF NOT EXISTS task (
         match self {
             Self::Tasks(tasks) => {
                 if tasks.should_finish(&key) {
+                    // tasks.write_db();
                     *self = Self::Finished;
                     return;
                 }

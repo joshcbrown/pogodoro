@@ -7,12 +7,13 @@ use std::io;
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
-fn main() -> AppResult<()> {
+#[tokio::main]
+async fn main() -> AppResult<()> {
     // Read command line args
     let args = Cli::parse();
     // Create an application.
     let mut app = AppState::new(args.command);
-    AppState::setup_db();
+    AppState::setup_db().await.unwrap();
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());

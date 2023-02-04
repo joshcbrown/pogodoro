@@ -9,7 +9,7 @@ clap = { version = "4.0.32", features = ["derive"] }
 crossterm = "0.25.0"
 dir = "0.1.2"
 notify-rust = "4.7.0"
-sqlx = { version = "0.6", features = [  "runtime-async-std-native-tls", "sqlite", "macros" ] }
-async-std = { version = "1", features = [ "attributes" ] }
+sqlx = { version = "0.6", features = [ "runtime-tokio-rustls", "macros", "sqlite" ] }
+tokio = { version = "1", features = ["full"] }
 tui = "0.19.0"
 unicode-width = "0.1.10"

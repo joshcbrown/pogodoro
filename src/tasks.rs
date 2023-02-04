@@ -2,6 +2,7 @@ use std::iter::repeat;
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
+use sqlx::{query, SqliteConnection, Connection};
 use tui::backend::Backend;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
@@ -9,6 +10,8 @@ use tui::text::Spans;
 use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
+
+use crate::states::AppState;
 
 #[derive(Clone, Debug)]
 pub struct Task {
@@ -29,8 +32,22 @@ impl Default for Task {
     }
 }
 
+impl ToString for Task {
+    fn to_string(&self) -> String {
+        // TODO: investigate jankness
+        format!(
+            "{} || {}/{}/{}",
+            self.desc.as_ref().unwrap(),
+            self.work_dur.as_secs() / 60,
+            self.short_break_dur.as_secs() / 60,
+            self.long_break_dur.as_secs() / 60
+        )
+    }
+}
+
 pub struct TasksState {
     tasks: StatefulList<Task>,
+    new_tasks: Vec<Task>,
     input: TaskInput,
     input_state: InputState,
 }
@@ -44,13 +61,32 @@ impl Default for TasksState {
     fn default() -> Self {
         Self {
             tasks: StatefulList::default(),
+            new_tasks: Self::read_db().await,
             input: TaskInput::default(),
             input_state: InputState::Normal,
         }
     }
 }
 
+const TABLE_NAME: &'static str = "tasks";
+
 impl TasksState {
+    async fn read_db() -> Vec<Task> {
+        let mut conn = SqliteConnection::connect(AppState::db_path().to_str().unwrap()).await.unwrap();
+        query!("SELECT * FROM tasks WHERE completed = 0")
+            .map(|task| Task {
+                desc: Some(task.desc),
+                work_dur: Duration::from_secs(task.task_dur as u64 * 60),
+                short_break_dur: Duration::from_secs(task.short_break_dur as u64 * 60),
+                long_break_dur: Duration::from_secs(task.long_break_dur as u64 * 60),
+            })
+            .fetch_all(&mut conn)
+            .await
+        .unwrap()
+            
+        // Vec::new()
+    }
+
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -64,7 +100,7 @@ impl TasksState {
             .iter()
             // unwrapping is ok here because the only way to be on this screen
             // is to have a valid description
-            .map(|task| ListItem::new(vec![Spans::from(task.desc.as_ref().unwrap().as_ref())]))
+            .map(|task| ListItem::new(vec![Spans::from(task.to_string())]))
             .collect();
 
         let task_list = List::new(task_list)
