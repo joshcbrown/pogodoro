@@ -11,7 +11,7 @@ use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragr
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
 
-use crate::states::AppState;
+use crate::states::{App, AppState};
 
 #[derive(Clone, Debug)]
 pub struct Task {
@@ -68,11 +68,9 @@ impl Default for TasksState {
     }
 }
 
-const TABLE_NAME: &str = "tasks";
-
 impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
-        let tasks = Self::read_db().await?;
+        let tasks = crate::db::read_tasks().await?;
         Ok(Self {
             tasks: StatefulList {
                 items: tasks,
@@ -80,46 +78,6 @@ impl TasksState {
             },
             ..Default::default()
         })
-    }
-
-    async fn read_db() -> Result<Vec<Task>, sqlx::Error> {
-        let mut conn = SqliteConnection::connect(AppState::db_path().to_str().unwrap())
-            .await
-            .unwrap();
-        let vec = query!("SELECT * FROM tasks WHERE completed = 0")
-            .map(|task| Task {
-                desc: Some(task.desc),
-                work_dur: Duration::from_secs(task.task_dur as u64),
-                short_break_dur: Duration::from_secs(task.short_break_dur as u64),
-                long_break_dur: Duration::from_secs(task.long_break_dur as u64),
-            })
-            .fetch_all(&mut conn)
-            .await?;
-        Ok(vec)
-    }
-
-    pub async fn write_db(&self) -> Result<(), sqlx::Error> {
-        let mut conn = SqliteConnection::connect(AppState::db_path().to_str().unwrap())
-            .await
-            .unwrap();
-        for task in &self.new_tasks {
-            let (work_dur, sb_dur, lb_dur) = (
-                task.work_dur.as_secs() as u32,
-                task.short_break_dur.as_secs() as u32,
-                task.long_break_dur.as_secs() as u32,
-            );
-            query!(
-                "INSERT INTO tasks VALUES (?, ?, ?, ?, ?)",
-                task.desc,
-                work_dur,
-                sb_dur,
-                lb_dur,
-                0
-            )
-            .execute(&mut conn)
-            .await?;
-        }
-        Ok(())
     }
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
@@ -187,8 +145,9 @@ impl TasksState {
                     KeyCode::Tab => self.input.0.next(),
                     // TODO: only accept non-empty descs
                     KeyCode::Enter => {
-                        self.new_tasks.push(self.input.get_task());
-                        self.tasks.items.push(self.input.get_task())
+                        let desc = self.input.get_task();
+                        self.new_tasks.push(desc.clone());
+                        self.tasks.items.push(desc)
                     }
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -202,6 +161,10 @@ impl TasksState {
             }
         };
         None
+    }
+
+    pub fn new_tasks(&self) -> Vec<Task> {
+        self.new_tasks.clone()
     }
 }
 

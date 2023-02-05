@@ -7,6 +7,7 @@ pub mod event;
 pub mod tui;
 
 pub mod args;
+pub mod db;
 pub mod pomodoro;
 pub mod states;
 pub mod tasks;

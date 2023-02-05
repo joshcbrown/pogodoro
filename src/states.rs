@@ -1,7 +1,7 @@
 use crate::tasks::Task;
 use crate::tasks::TasksState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use sqlx::{Connection, SqliteConnection};
+use sqlx::{query, Connection, SqliteConnection};
 use std::error;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -13,16 +13,15 @@ use crate::pomodoro::Pomodoro;
 
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
-pub enum AppState {
-    Tasks(TasksState),
-    Working(Pomodoro),
-    Finished,
-}
-
 const CFG_PATH_STR: &str = ".config/pogodoro/";
 const DB_NAME: &str = "records.db";
 
-impl AppState {
+pub struct App {
+    new_tasks: Vec<Task>,
+    pub state: AppState,
+}
+
+impl App {
     pub fn cfg_path() -> PathBuf {
         let mut path = dir::home_dir().unwrap();
         path.push(CFG_PATH_STR);
@@ -42,6 +41,73 @@ impl AppState {
         Ok(())
     }
 
+    pub async fn new(ops: Option<Commands>) -> Self {
+        Self {
+            new_tasks: Vec::new(),
+            state: AppState::new(ops).await,
+        }
+    }
+
+    pub async fn handle_key_event(&mut self, event: KeyEvent) {
+        if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
+            self.state = AppState::Finished
+        }
+        match &mut self.state {
+            AppState::Tasks(tasks) => {
+                if tasks.should_finish(&event) {
+                    self.new_tasks.append(&mut tasks.new_tasks());
+                    self.state = AppState::Finished;
+                    return;
+                }
+                // check if user has chosen some task, move on to pomo if so
+                if let Some(task) = tasks.handle_key_event(event) {
+                    self.new_tasks.append(&mut tasks.new_tasks());
+                    self.state = AppState::Working(Pomodoro::default().assign(task))
+                }
+            }
+            AppState::Working(pomo) => {
+                if pomo.should_finish(&event) {
+                    self.state = AppState::Finished;
+                    return;
+                }
+                pomo.handle_key_event(event)
+            }
+            AppState::Finished => {}
+        }
+    }
+
+    pub async fn write_db(&self) -> Result<(), sqlx::Error> {
+        let mut conn = SqliteConnection::connect(Self::db_path().to_str().unwrap())
+            .await
+            .unwrap();
+        for task in &self.new_tasks {
+            let (work_dur, sb_dur, lb_dur) = (
+                task.work_dur.as_secs() as u32,
+                task.short_break_dur.as_secs() as u32,
+                task.long_break_dur.as_secs() as u32,
+            );
+            query!(
+                "INSERT INTO tasks VALUES (?, ?, ?, ?, ?)",
+                task.desc,
+                work_dur,
+                sb_dur,
+                lb_dur,
+                0
+            )
+            .execute(&mut conn)
+            .await?;
+        }
+        Ok(())
+    }
+}
+
+pub enum AppState {
+    Tasks(TasksState),
+    Working(Pomodoro),
+    Finished,
+}
+
+impl AppState {
     pub async fn new(ops: Option<Commands>) -> Self {
         match ops {
             Some(Commands::Start(Start {
@@ -65,32 +131,7 @@ impl AppState {
         }
     }
 
-    pub async fn handle_key_event(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-            *self = Self::Finished
-        }
-        match self {
-            Self::Tasks(tasks) => {
-                if tasks.should_finish(&key) {
-                    tasks.write_db().await.unwrap();
-                    *self = Self::Finished;
-                    return;
-                }
-                // check if user has chosen some task, move on to pomo if so
-                if let Some(task) = tasks.handle_key_event(key) {
-                    *self = Self::Working(Pomodoro::default().assign(task))
-                }
-            }
-            Self::Working(pomo) => {
-                if pomo.should_finish(&key) {
-                    *self = Self::Finished;
-                    return;
-                }
-                pomo.handle_key_event(key)
-            }
-            Self::Finished => {}
-        }
-    }
+    pub async fn handle_key_event(&mut self, key: KeyEvent) {}
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         match self {
