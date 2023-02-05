@@ -1,7 +1,7 @@
 use crate::tasks::Task;
 use crate::tasks::TasksState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use sqlx::{query, Connection, SqliteConnection};
+use sqlx::{Connection, SqliteConnection};
 use std::error;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -19,8 +19,8 @@ pub enum AppState {
     Finished,
 }
 
-const CFG_PATH_STR: &'static str = ".config/pogodoro/";
-const DB_NAME: &'static str = "records.db";
+const CFG_PATH_STR: &str = ".config/pogodoro/";
+const DB_NAME: &str = "records.db";
 
 impl AppState {
     pub fn cfg_path() -> PathBuf {
@@ -36,28 +36,13 @@ impl AppState {
     }
 
     pub async fn setup_db() -> Result<(), sqlx::Error> {
-        let path = Self::cfg_path();
-        std::fs::create_dir_all(&path).unwrap();
         let path = Self::db_path();
-
-        let mut connection = SqliteConnection::connect(path.to_str().unwrap()).await?;
-
-        sqlx::query!(
-            "
-CREATE TABLE IF NOT EXISTS tasks (
-    desc TEXT NOT NULL,
-    task_dur INTEGER NOT NULL,
-    short_break_dur INTEGER NOT NULL,
-    long_break_dur INTEGER NOT NULL,
-    completed INTEGER DEFAULT 0
-);
-"
-        )
-        .execute(&mut connection).await?;
+        let mut conn = SqliteConnection::connect(path.to_str().unwrap()).await?;
+        sqlx::migrate!().run(&mut conn).await?;
         Ok(())
     }
 
-    pub fn new(ops: Option<Commands>) -> Self {
+    pub async fn new(ops: Option<Commands>) -> Self {
         match ops {
             Some(Commands::Start(Start {
                 work_dur,
@@ -70,7 +55,7 @@ CREATE TABLE IF NOT EXISTS tasks (
                 long_break_dur: Duration::from_secs(long_break_dur * 60),
             })),
 
-            None => Self::Tasks(TasksState::default()),
+            None => Self::Tasks(TasksState::new().await.unwrap()),
         }
     }
 
@@ -80,14 +65,14 @@ CREATE TABLE IF NOT EXISTS tasks (
         }
     }
 
-    pub fn handle_key_event(&mut self, key: KeyEvent) {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) {
         if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
             *self = Self::Finished
         }
         match self {
             Self::Tasks(tasks) => {
                 if tasks.should_finish(&key) {
-                    // tasks.write_db();
+                    tasks.write_db().await.unwrap();
                     *self = Self::Finished;
                     return;
                 }

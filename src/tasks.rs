@@ -2,7 +2,7 @@ use std::iter::repeat;
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
-use sqlx::{query, SqliteConnection, Connection};
+use sqlx::{query, Connection, SqliteConnection};
 use tui::backend::Backend;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
@@ -61,30 +61,65 @@ impl Default for TasksState {
     fn default() -> Self {
         Self {
             tasks: StatefulList::default(),
-            new_tasks: Self::read_db().await,
+            new_tasks: Vec::new(),
             input: TaskInput::default(),
             input_state: InputState::Normal,
         }
     }
 }
 
-const TABLE_NAME: &'static str = "tasks";
+const TABLE_NAME: &str = "tasks";
 
 impl TasksState {
-    async fn read_db() -> Vec<Task> {
-        let mut conn = SqliteConnection::connect(AppState::db_path().to_str().unwrap()).await.unwrap();
-        query!("SELECT * FROM tasks WHERE completed = 0")
+    pub async fn new() -> Result<Self, sqlx::Error> {
+        let tasks = Self::read_db().await?;
+        Ok(Self {
+            tasks: StatefulList {
+                items: tasks,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    async fn read_db() -> Result<Vec<Task>, sqlx::Error> {
+        let mut conn = SqliteConnection::connect(AppState::db_path().to_str().unwrap())
+            .await
+            .unwrap();
+        let vec = query!("SELECT * FROM tasks WHERE completed = 0")
             .map(|task| Task {
                 desc: Some(task.desc),
-                work_dur: Duration::from_secs(task.task_dur as u64 * 60),
-                short_break_dur: Duration::from_secs(task.short_break_dur as u64 * 60),
-                long_break_dur: Duration::from_secs(task.long_break_dur as u64 * 60),
+                work_dur: Duration::from_secs(task.task_dur as u64),
+                short_break_dur: Duration::from_secs(task.short_break_dur as u64),
+                long_break_dur: Duration::from_secs(task.long_break_dur as u64),
             })
             .fetch_all(&mut conn)
+            .await?;
+        Ok(vec)
+    }
+
+    pub async fn write_db(&self) -> Result<(), sqlx::Error> {
+        let mut conn = SqliteConnection::connect(AppState::db_path().to_str().unwrap())
             .await
-        .unwrap()
-            
-        // Vec::new()
+            .unwrap();
+        for task in &self.new_tasks {
+            let (work_dur, sb_dur, lb_dur) = (
+                task.work_dur.as_secs() as u32,
+                task.short_break_dur.as_secs() as u32,
+                task.long_break_dur.as_secs() as u32,
+            );
+            query!(
+                "INSERT INTO tasks VALUES (?, ?, ?, ?, ?)",
+                task.desc,
+                work_dur,
+                sb_dur,
+                lb_dur,
+                0
+            )
+            .execute(&mut conn)
+            .await?;
+        }
+        Ok(())
     }
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
@@ -151,7 +186,10 @@ impl TasksState {
                     }
                     KeyCode::Tab => self.input.0.next(),
                     // TODO: only accept non-empty descs
-                    KeyCode::Enter => self.tasks.items.push(self.input.get_task()),
+                    KeyCode::Enter => {
+                        self.new_tasks.push(self.input.get_task());
+                        self.tasks.items.push(self.input.get_task())
+                    }
                     KeyCode::Backspace => {
                         self.input.pop();
                     }

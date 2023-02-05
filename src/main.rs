@@ -12,7 +12,8 @@ async fn main() -> AppResult<()> {
     // Read command line args
     let args = Cli::parse();
     // Create an application.
-    let mut app = AppState::new(args.command);
+    let mut app = AppState::new(args.command).await;
+    // TODO: investigate automatic setup of db
     AppState::setup_db().await.unwrap();
 
     // Initialize the terminal user interface.
@@ -33,7 +34,7 @@ async fn main() -> AppResult<()> {
 
         match tui.events.next()? {
             Event::Tick => app.tick(),
-            Event::Key(key_event) => app.handle_key_event(key_event),
+            Event::Key(key_event) => app.handle_key_event(key_event).await,
             _ => {}
         }
     }
