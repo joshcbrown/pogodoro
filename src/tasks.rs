@@ -1,6 +1,7 @@
 use std::iter::repeat;
 use std::time::Duration;
 
+use crate::db;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use sqlx::{query, Connection, SqliteConnection};
 use tui::backend::Backend;
@@ -11,14 +12,14 @@ use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragr
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
 
-use crate::states::{App, AppState};
-
 #[derive(Clone, Debug)]
 pub struct Task {
     pub desc: Option<String>,
     pub work_dur: Duration,
     pub short_break_dur: Duration,
     pub long_break_dur: Duration,
+    pub num_completed: u32,
+    pub completed: bool,
 }
 
 impl Default for Task {
@@ -28,6 +29,8 @@ impl Default for Task {
             work_dur: Duration::from_secs(60 * 25),
             short_break_dur: Duration::from_secs(60 * 5),
             long_break_dur: Duration::from_secs(60 * 15),
+            num_completed: 0,
+            completed: false,
         }
     }
 }
@@ -118,13 +121,19 @@ impl TasksState {
         }
     }
 
-    pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
         // TODO: tidy
         match self.input_state {
             InputState::Normal => match key.code {
                 KeyCode::Char('i') => {
                     self.input_state = InputState::Insert;
                     self.input.0.next()
+                }
+                KeyCode::Char('c') => {
+                    if let Some(task) = self.tasks.selected() {
+                        db::set_done(task.desc.as_ref().unwrap().clone()).await;
+                        *self = Self::new().await.unwrap();
+                    }
                 }
                 KeyCode::Down | KeyCode::Char('j') => self.tasks.next(),
                 KeyCode::Up | KeyCode::Char('k') => self.tasks.previous(),
@@ -335,6 +344,8 @@ impl TaskInput {
             work_dur,
             short_break_dur,
             long_break_dur,
+            num_completed: 0,
+            completed: false,
         }
     }
 }
@@ -392,5 +403,9 @@ impl<T> StatefulList<T> {
                 }
             }
         });
+    }
+
+    pub fn selected(&self) -> Option<&T> {
+        Some(&self.items[self.state.selected()?])
     }
 }

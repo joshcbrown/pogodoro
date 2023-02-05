@@ -1,3 +1,4 @@
+use crate::db;
 use crate::tasks::Task;
 use crate::tasks::TasksState;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -13,34 +14,12 @@ use crate::pomodoro::Pomodoro;
 
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
-const CFG_PATH_STR: &str = ".config/pogodoro/";
-const DB_NAME: &str = "records.db";
-
 pub struct App {
     new_tasks: Vec<Task>,
     pub state: AppState,
 }
 
 impl App {
-    pub fn cfg_path() -> PathBuf {
-        let mut path = dir::home_dir().unwrap();
-        path.push(CFG_PATH_STR);
-        path
-    }
-
-    pub fn db_path() -> PathBuf {
-        let mut path = Self::cfg_path();
-        path.push(DB_NAME);
-        path
-    }
-
-    pub async fn setup_db() -> Result<(), sqlx::Error> {
-        let path = Self::db_path();
-        let mut conn = SqliteConnection::connect(path.to_str().unwrap()).await?;
-        sqlx::migrate!().run(&mut conn).await?;
-        Ok(())
-    }
-
     pub async fn new(ops: Option<Commands>) -> Self {
         Self {
             new_tasks: Vec::new(),
@@ -60,7 +39,7 @@ impl App {
                     return;
                 }
                 // check if user has chosen some task, move on to pomo if so
-                if let Some(task) = tasks.handle_key_event(event) {
+                if let Some(task) = tasks.handle_key_event(event).await {
                     self.new_tasks.append(&mut tasks.new_tasks());
                     self.state = AppState::Working(Pomodoro::default().assign(task))
                 }
@@ -70,29 +49,36 @@ impl App {
                     self.state = AppState::Finished;
                     return;
                 }
-                pomo.handle_key_event(event)
+                if let Some(desc) = pomo.handle_key_event(event) {
+                    self.write_db().await.unwrap();
+                    // TODO:
+                    db::set_done(desc).await;
+                    self.state = AppState::Tasks(TasksState::new().await.unwrap())
+                }
             }
             AppState::Finished => {}
         }
     }
 
-    pub async fn write_db(&self) -> Result<(), sqlx::Error> {
-        let mut conn = SqliteConnection::connect(Self::db_path().to_str().unwrap())
+    pub async fn write_db(&mut self) -> Result<(), sqlx::Error> {
+        // TODO: move this to db.rs
+        let mut conn = SqliteConnection::connect(db::path().to_str().unwrap())
             .await
             .unwrap();
-        for task in &self.new_tasks {
+        for task in self.new_tasks.drain(..) {
             let (work_dur, sb_dur, lb_dur) = (
                 task.work_dur.as_secs() as u32,
                 task.short_break_dur.as_secs() as u32,
                 task.long_break_dur.as_secs() as u32,
             );
             query!(
-                "INSERT INTO tasks VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?)",
                 task.desc,
                 work_dur,
                 sb_dur,
                 lb_dur,
-                0
+                task.num_completed,
+                task.completed
             )
             .execute(&mut conn)
             .await?;
@@ -115,10 +101,10 @@ impl AppState {
                 short_break_dur,
                 long_break_dur,
             })) => Self::Working(Pomodoro::default().assign(Task {
-                desc: None,
                 work_dur: Duration::from_secs(work_dur * 60),
                 short_break_dur: Duration::from_secs(short_break_dur * 60),
                 long_break_dur: Duration::from_secs(long_break_dur * 60),
+                ..Default::default()
             })),
 
             None => Self::Tasks(TasksState::new().await.unwrap()),

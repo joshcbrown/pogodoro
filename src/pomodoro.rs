@@ -252,14 +252,13 @@ impl Pomodoro {
         key.code == KeyCode::Char('q') || key.code == KeyCode::Esc
     }
 
-    pub fn handle_key_event(&mut self, key: KeyEvent) {
+    pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<String> {
         match key.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
             KeyCode::Char('n') => self.change_timers(),
-            KeyCode::Enter => {
-                // TODO: make this return to tasks page
-            }
+            KeyCode::Enter => return self.task.desc.clone(),
             _ => {}
         }
+        None
     }
 }

@@ -15,7 +15,7 @@ async fn main() -> AppResult<()> {
     // Create an application.
     let mut app = App::new(args.command).await;
     // TODO: investigate automatic setup of db
-    db::setup_db().await.unwrap();
+    db::setup().await.unwrap();
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());
