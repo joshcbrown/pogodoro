@@ -1,3 +1,4 @@
+use crate::db;
 use crate::tasks::Task;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
 use notify_rust::Notification;
@@ -111,10 +112,10 @@ impl fmt::Display for PomodoroState {
 
 #[derive(Debug)]
 pub struct Pomodoro {
+    pub id: Option<u32>,
     pub current: Timer,
     pub task: Task,
     pub state: PomodoroState,
-    pub pomos_completed: u16,
 }
 
 const POMO_HEIGHT: u16 = 6;
@@ -126,10 +127,10 @@ impl Default for Pomodoro {
         let mut first_timer = Timer::new(task.work_dur);
         first_timer.update();
         Self {
+            id: None,
             current: first_timer,
             task: Task::default(),
             state: PomodoroState::Work,
-            pomos_completed: 0,
         }
     }
 }
@@ -145,18 +146,23 @@ impl Pomodoro {
         }
     }
 
-    pub fn update(&mut self) {
+    pub async fn update(&mut self) {
         self.current.update();
         if self.current.is_finished() {
-            self.change_timers()
+            self.change_timers().await
         }
     }
 
-    fn change_timers(&mut self) {
+    async fn change_timers(&mut self) {
         (self.state, self.current) = match self.state {
             PomodoroState::Work => {
-                self.pomos_completed += 1;
-                if self.pomos_completed % 4 == 0 {
+                self.task.num_completed += 1;
+                if let Some(id) = self.task.id {
+                    db::set_finished(id as i64, self.task.num_completed as i64)
+                        .await
+                        .unwrap();
+                }
+                if self.task.num_completed % 4 == 0 {
                     (
                         PomodoroState::LongBreak,
                         Timer::new(self.task.long_break_dur),
@@ -231,7 +237,7 @@ impl Pomodoro {
 
         let pomo_text = format!(
             "{}Remaining: {}\nFinished: {}\n\n[n]ext [q]uit {}",
-            task_text, self.current, self.pomos_completed, pause_text
+            task_text, self.current, self.task.num_completed, pause_text
         );
 
         let pomo_widget = Paragraph::new(pomo_text)
@@ -252,11 +258,12 @@ impl Pomodoro {
         key.code == KeyCode::Char('q') || key.code == KeyCode::Esc
     }
 
-    pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<String> {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<u32> {
+        // BUG: not handling incrementation of num_completed
         match key.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
-            KeyCode::Char('n') => self.change_timers(),
-            KeyCode::Enter => return self.task.desc.clone(),
+            KeyCode::Char('n') => self.change_timers().await,
+            KeyCode::Enter => return self.task.id,
             _ => {}
         }
         None

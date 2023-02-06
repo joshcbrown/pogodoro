@@ -2,7 +2,7 @@ use clap::Parser;
 use pogodoro::args::Cli;
 use pogodoro::db;
 use pogodoro::event::{Event, EventHandler};
-use pogodoro::states::{App, AppResult, AppState};
+use pogodoro::states::{AppResult, AppState};
 use pogodoro::tui::Tui;
 use std::io;
 use tui::backend::CrosstermBackend;
@@ -13,8 +13,7 @@ async fn main() -> AppResult<()> {
     // Read command line args
     let args = Cli::parse();
     // Create an application.
-    let mut app = App::new(args.command).await;
-    // TODO: investigate automatic setup of db
+    let mut app = AppState::new(args.command).await;
     db::setup().await.unwrap();
 
     // Initialize the terminal user interface.
@@ -26,7 +25,7 @@ async fn main() -> AppResult<()> {
 
     // Start the main loop.
     loop {
-        if let AppState::Finished = app.state {
+        if let AppState::Finished = app {
             break;
         }
         // Render the user interface.
@@ -34,12 +33,11 @@ async fn main() -> AppResult<()> {
         // Handle events.
 
         match tui.events.next()? {
-            Event::Tick => app.state.tick(),
+            Event::Tick => app.tick().await,
             Event::Key(key_event) => app.handle_key_event(key_event).await,
             _ => {}
         }
     }
-    app.write_db().await?;
     // Exit the user interface.
     tui.exit()?;
     Ok(())

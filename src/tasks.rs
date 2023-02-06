@@ -14,6 +14,7 @@ use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug)]
 pub struct Task {
+    pub id: Option<u32>,
     pub desc: Option<String>,
     pub work_dur: Duration,
     pub short_break_dur: Duration,
@@ -25,6 +26,7 @@ pub struct Task {
 impl Default for Task {
     fn default() -> Self {
         Self {
+            id: None,
             desc: None,
             work_dur: Duration::from_secs(60 * 25),
             short_break_dur: Duration::from_secs(60 * 5),
@@ -50,7 +52,6 @@ impl ToString for Task {
 
 pub struct TasksState {
     tasks: StatefulList<Task>,
-    new_tasks: Vec<Task>,
     input: TaskInput,
     input_state: InputState,
 }
@@ -64,7 +65,6 @@ impl Default for TasksState {
     fn default() -> Self {
         Self {
             tasks: StatefulList::default(),
-            new_tasks: Vec::new(),
             input: TaskInput::default(),
             input_state: InputState::Normal,
         }
@@ -131,7 +131,7 @@ impl TasksState {
                 }
                 KeyCode::Char('c') => {
                     if let Some(task) = self.tasks.selected() {
-                        db::set_done(task.desc.as_ref().unwrap().clone()).await;
+                        db::set_done(task.id.unwrap() as i64).await;
                         *self = Self::new().await.unwrap();
                     }
                 }
@@ -154,9 +154,11 @@ impl TasksState {
                     KeyCode::Tab => self.input.0.next(),
                     // TODO: only accept non-empty descs
                     KeyCode::Enter => {
-                        let desc = self.input.get_task();
-                        self.new_tasks.push(desc.clone());
-                        self.tasks.items.push(desc)
+                        let (desc, work_dur, sb_dur, lb_dur) = self.input.get_task();
+                        let new_task = db::write_return(desc, work_dur, sb_dur, lb_dur)
+                            .await
+                            .unwrap();
+                        self.tasks.items.push(new_task)
                     }
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -170,10 +172,6 @@ impl TasksState {
             }
         };
         None
-    }
-
-    pub fn new_tasks(&self) -> Vec<Task> {
-        self.new_tasks.clone()
     }
 }
 
@@ -322,31 +320,29 @@ impl TaskInput {
         self.0.pop()
     }
 
-    fn parse_dur(&mut self, i: usize, default: Duration) -> Duration {
+    fn parse_secs(&mut self, i: usize, default: Duration) -> i64 {
         let text: &mut String = &mut self.0.inputs[i].text;
         if text.is_empty() {
-            default
+            default.as_secs() as i64
         } else {
-            match text.drain(..).collect::<String>().parse::<u64>() {
-                Ok(n) => Duration::from_secs(n * 60),
-                Err(_) => default,
-            }
+            text.drain(..)
+                .collect::<String>()
+                .parse::<i64>()
+                .unwrap_or(default.as_secs() as i64)
         }
     }
 
-    fn get_task(&mut self) -> Task {
+    fn get_task(&mut self) -> (String, i64, i64, i64) {
         let default = Task::default();
-        let work_dur = self.parse_dur(1, default.work_dur);
-        let short_break_dur = self.parse_dur(2, default.short_break_dur);
-        let long_break_dur = self.parse_dur(3, default.short_break_dur);
-        Task {
-            desc: Some(self.0.inputs[0].text.drain(..).collect()),
+        let work_dur = self.parse_secs(1, default.work_dur);
+        let short_break_dur = self.parse_secs(2, default.short_break_dur);
+        let long_break_dur = self.parse_secs(3, default.short_break_dur);
+        (
+            self.0.inputs[0].text.drain(..).collect(),
             work_dur,
             short_break_dur,
             long_break_dur,
-            num_completed: 0,
-            completed: false,
-        }
+        )
     }
 }
 
