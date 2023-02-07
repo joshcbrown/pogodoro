@@ -2,12 +2,13 @@ use std::iter::repeat;
 use std::time::Duration;
 
 use crate::db;
+use crate::pomodoro::centered_rect;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui::backend::Backend;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
 use tui::text::Spans;
-use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
+use tui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph};
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
 
@@ -40,6 +41,7 @@ impl Default for Task {
 impl ToString for Task {
     fn to_string(&self) -> String {
         // TODO: investigate jankness
+        // possible fix: use f64 instead and store mins
         format!(
             "{} || {}/{}/{}",
             self.desc.as_ref().unwrap(),
@@ -59,6 +61,7 @@ pub struct TasksState {
 pub enum InputState {
     Insert,
     Normal,
+    Help,
 }
 
 impl Default for TasksState {
@@ -70,6 +73,23 @@ impl Default for TasksState {
         }
     }
 }
+
+const HELP_TEXT: &str = "This screen has two modes: insert, and normal.
+The user is in insert mode when they are filling in a new task's
+fields at the top of the screen.
+The user is in normal mode when they are selecting a task to begin. 
+The app begins in normal mode.
+
+Use [tab] or [i] to enter insert mode,
+[tab] to switch between fields, and [enter] to submit the task.
+Use [esc] to exit insert mode into normal mode.
+
+While in normal mode, use [j], [k], [up], and [down]
+to navigate task entries in the main box.
+Use [enter] to select a task and begin a pomodoro for it.
+You can also exit the program from normal mode with [q] or [esc].
+
+Use [?] to quit this help message into normal mode.";
 
 impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
@@ -111,6 +131,22 @@ impl TasksState {
 
         self.input.render_on(frame, chunks[0]);
         frame.render_stateful_widget(task_list, chunks[1], &mut self.tasks.state);
+
+        if let InputState::Help = &self.input_state {
+            // hard coded vals for text width and height
+            let help_chunk = centered_rect(70, 18, frame.size());
+
+            let help_text = Paragraph::new(HELP_TEXT)
+                .block(
+                    Block::default()
+                        .title("Help")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded),
+                )
+                .style(Style::default().fg(Color::Yellow));
+            frame.render_widget(Clear, help_chunk);
+            frame.render_widget(help_text, help_chunk);
+        }
     }
 
     pub fn should_finish(&self, key: &KeyEvent) -> bool {
@@ -124,6 +160,7 @@ impl TasksState {
     pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
         match self.input_state {
             InputState::Normal => match key.code {
+                KeyCode::Char('?') => self.input_state = InputState::Help,
                 KeyCode::Char('i') | KeyCode::Tab => {
                     self.input_state = InputState::Insert;
                     self.input.next()
@@ -173,6 +210,11 @@ impl TasksState {
                     self.input.clear()
                 };
             }
+            InputState::Help => {
+                if key.code == KeyCode::Char('?') {
+                    self.input_state = InputState::Normal
+                }
+            }
         };
         None
     }
@@ -181,7 +223,6 @@ impl TasksState {
 struct UserInput {
     title: String,
     text: String,
-    input_state: InputState,
 }
 
 impl UserInput {
@@ -189,15 +230,15 @@ impl UserInput {
         Self {
             title,
             text: String::new(),
-            input_state: InputState::Normal,
         }
     }
 
-    fn to_widget(&self) -> Paragraph {
+    fn to_widget(&self, focused: Option<bool>) -> Paragraph {
         Paragraph::new(self.text.as_ref())
-            .style(match self.input_state {
-                InputState::Insert => Style::default().fg(Color::Yellow),
-                InputState::Normal => Style::default(),
+            .style(if let Some(true) = focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
             })
             .block(
                 Block::default()
@@ -242,8 +283,8 @@ impl InputGroup {
             )
             .split(chunk);
 
-        for (input, sub_chunk) in self.inputs.iter().zip(&sub_chunks) {
-            frame.render_widget(input.to_widget(), *sub_chunk)
+        for (i, (input, sub_chunk)) in self.inputs.iter().zip(&sub_chunks).enumerate() {
+            frame.render_widget(input.to_widget(self.focused.map(|j| i == j)), *sub_chunk)
         }
 
         if self.focused.is_none() {
@@ -301,9 +342,9 @@ impl Default for TaskInput {
         Self(InputGroup {
             inputs: vec![
                 UserInput::new("Task name".into()),
-                UserInput::new("Work duration".into()),
-                UserInput::new("SB duration".into()),
-                UserInput::new("LB duration".into()),
+                UserInput::new("Work duration (m)".into()),
+                UserInput::new("Short break duration (m)".into()),
+                UserInput::new("Long break duration (m)".into()),
             ],
             focused: None,
         })

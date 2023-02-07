@@ -9,7 +9,7 @@ use std::{
 };
 use tui::{
     backend::Backend,
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
     Frame,
@@ -103,8 +103,8 @@ impl fmt::Display for PomodoroState {
             "{}",
             match self {
                 Self::Work => "Work",
-                Self::ShortBreak => "Short Break",
-                Self::LongBreak => "Long Break",
+                Self::ShortBreak => "Short break",
+                Self::LongBreak => "Long break",
             }
         )
     }
@@ -116,10 +116,16 @@ pub struct Pomodoro {
     pub current: Timer,
     pub task: Task,
     pub state: PomodoroState,
+    pub show_help: bool,
 }
 
-const POMO_HEIGHT: u16 = 7;
+const POMO_HEIGHT: u16 = 5;
 const POMO_WIDTH: u16 = 25;
+const HELP_TEXT: &str = "[p] - toggle pause on current pomo
+[n] - skip to next cycle in pomo
+[q] - quit session and return to command line
+[enter] - complete task and return to tasks page
+[?] - toggle this help page";
 
 impl Default for Pomodoro {
     fn default() -> Self {
@@ -131,6 +137,7 @@ impl Default for Pomodoro {
             current: first_timer,
             task: Task::default(),
             state: PomodoroState::Work,
+            show_help: false,
         }
     }
 }
@@ -191,9 +198,20 @@ impl Pomodoro {
     }
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
-        let frame_rect = frame.size();
-
-        let (vert_height, hor_height) = if let Some(desc) = &self.task.desc {
+        if self.show_help {
+            let help_chunk = centered_rect(50, 7, frame.size());
+            let help_text = Paragraph::new(HELP_TEXT)
+                .block(
+                    Block::default()
+                        .title("Help")
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded),
+                )
+                .style(Style::default().fg(Color::Yellow));
+            frame.render_widget(help_text, help_chunk);
+            return;
+        }
+        let (height, width) = if let Some(desc) = &self.task.desc {
             (
                 POMO_HEIGHT + 1,
                 max(
@@ -205,38 +223,18 @@ impl Pomodoro {
             (POMO_HEIGHT, POMO_WIDTH)
         };
 
-        let vert_buffer = frame_rect.height.saturating_sub(vert_height) / 2;
-        let hor_buffer = frame_rect.width.saturating_sub(hor_height) / 2;
-
-        let vert_chunk = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(vert_buffer),
-                Constraint::Length(vert_height),
-                Constraint::Min(vert_buffer),
-            ])
-            .margin(1)
-            .split(frame.size())[1];
-
-        let hor_chunk = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(hor_buffer),
-                Constraint::Length(hor_height),
-                Constraint::Min(hor_buffer),
-            ])
-            .margin(1)
-            .split(vert_chunk)[1];
+        let pomo_chunk = centered_rect(width, height, frame.size());
 
         frame.render_widget(
             Block::default()
-                .title(format!("Pogodoro - {}", self.state))
+                .title(format!("{}", self.state))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(self.style()),
-            hor_chunk,
+            pomo_chunk,
         );
 
+        // split into info and gauge
         let pomo_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -244,7 +242,7 @@ impl Pomodoro {
                 Constraint::Length(2),
             ])
             .margin(1)
-            .split(hor_chunk);
+            .split(pomo_chunk);
 
         // TODO: create help screen
         // let pause_text = if self.current.paused {
@@ -283,8 +281,37 @@ impl Pomodoro {
             KeyCode::Char('p') => self.current.toggle_pause(),
             KeyCode::Char('n') => self.change_timers().await,
             KeyCode::Enter => return self.task.id,
+            KeyCode::Char('?') => {
+                if self.show_help || !(self.show_help || self.current.paused) {
+                    self.current.toggle_pause()
+                }
+                self.show_help = !self.show_help
+            }
             _ => {}
         }
         None
     }
+}
+
+pub fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
+    let vert_buffer = r.height.saturating_sub(height) / 2;
+    let hor_buffer = r.width.saturating_sub(width) / 2;
+
+    let hor_chunk = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(vert_buffer),
+            Constraint::Length(height),
+            Constraint::Min(vert_buffer),
+        ])
+        .split(r)[1];
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(hor_buffer),
+            Constraint::Length(width),
+            Constraint::Min(hor_buffer),
+        ])
+        .split(hor_chunk)[1]
 }

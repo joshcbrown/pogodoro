@@ -23,7 +23,7 @@ pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
             short_break_dur: Duration::from_secs(task.short_break_dur as u64),
             long_break_dur: Duration::from_secs(task.long_break_dur as u64),
             pomos_finished: task.pomos_finished as u32,
-            completed: if task.completed == 1 { true } else { false },
+            completed: task.completed == 1,
         })
         .fetch_all(&mut conn)
         .await?;
@@ -56,7 +56,7 @@ pub async fn write_and_return_task(
             short_break_dur: Duration::from_secs(task.short_break_dur as u64),
             long_break_dur: Duration::from_secs(task.long_break_dur as u64),
             pomos_finished: task.pomos_finished as u32,
-            completed: if task.completed == 1 { true } else { false },
+            completed: task.completed == 1,
         })
         .fetch_one(&mut conn)
         .await
