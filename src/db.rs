@@ -32,18 +32,18 @@ pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
 
 pub async fn write_and_return_task(
     desc: String,
-    work_dur: i64,
-    short_break_dur: i64,
-    long_break_dur: i64,
+    work_secs: i64,
+    short_break_secs: i64,
+    long_break_secs: i64,
 ) -> Result<Task, sqlx::Error> {
     let mut conn = get_conn().await;
     // put task in DB
     query!(
         "INSERT INTO tasks VALUES (?, ?, ?, ?, 0, 0)",
         desc,
-        work_dur,
-        short_break_dur,
-        long_break_dur,
+        work_secs,
+        short_break_secs,
+        long_break_secs,
     )
     .execute(&mut conn)
     .await?;

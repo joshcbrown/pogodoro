@@ -2,8 +2,7 @@ use std::iter::repeat;
 use std::time::Duration;
 
 use crate::db;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
-use sqlx::{query, Connection, SqliteConnection};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui::backend::Backend;
 use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
@@ -12,6 +11,7 @@ use tui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragr
 use tui::Frame;
 use unicode_width::UnicodeWidthStr;
 
+// TODO: make the durs into num of secs, id into i64
 #[derive(Clone, Debug)]
 pub struct Task {
     pub id: Option<u32>,
@@ -153,10 +153,15 @@ impl TasksState {
                     }
                     KeyCode::Tab => self.input.0.next(),
                     KeyCode::Enter => {
-                        let (desc, work_secs, sb_secs, lb_secs) = self.input.get_task();
-                        let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
-                            .await
-                            .unwrap();
+                        let (desc, work_mins, sb_mins, lb_mins) = self.input.get_task();
+                        let new_task = db::write_and_return_task(
+                            desc,
+                            work_mins * 60,
+                            sb_mins * 60,
+                            lb_mins * 60,
+                        )
+                        .await
+                        .unwrap();
                         self.tasks.items.push(new_task)
                     }
                     KeyCode::Backspace => {
@@ -329,21 +334,17 @@ impl TaskInput {
 
     fn parse_secs(&mut self, i: usize, default: Duration) -> i64 {
         let text: &mut String = &mut self.0.inputs[i].text;
-        if text.is_empty() {
-            default.as_secs() as i64
-        } else {
-            text.drain(..)
-                .collect::<String>()
-                .parse::<i64>()
-                .unwrap_or(default.as_secs() as i64)
-        }
+        text.drain(..)
+            .collect::<String>()
+            .parse::<i64>()
+            .unwrap_or((default.as_secs() / 60) as i64)
     }
 
     fn get_task(&mut self) -> (String, i64, i64, i64) {
         let default = Task::default();
         let work_dur = self.parse_secs(1, default.work_dur);
         let short_break_dur = self.parse_secs(2, default.short_break_dur);
-        let long_break_dur = self.parse_secs(3, default.short_break_dur);
+        let long_break_dur = self.parse_secs(3, default.long_break_dur);
         (
             self.0.inputs[0].text.drain(..).collect(),
             work_dur,

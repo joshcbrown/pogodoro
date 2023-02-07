@@ -1,6 +1,6 @@
 use crate::db;
 use crate::tasks::Task;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, ModifierKeyCode};
+use crossterm::event::{KeyCode, KeyEvent};
 use notify_rust::Notification;
 use std::{
     cmp::max,
@@ -11,7 +11,7 @@ use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Gauge, Paragraph},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -118,7 +118,7 @@ pub struct Pomodoro {
     pub state: PomodoroState,
 }
 
-const POMO_HEIGHT: u16 = 6;
+const POMO_HEIGHT: u16 = 7;
 const POMO_WIDTH: u16 = 25;
 
 impl Default for Pomodoro {
@@ -196,7 +196,10 @@ impl Pomodoro {
         let (vert_height, hor_height) = if let Some(desc) = &self.task.desc {
             (
                 POMO_HEIGHT + 1,
-                max((desc.width() + "Remaining: ".width()) as u16, POMO_WIDTH),
+                max(
+                    (desc.width() + "Working on: ".width() + 2) as u16,
+                    POMO_WIDTH,
+                ),
             )
         } else {
             (POMO_HEIGHT, POMO_WIDTH)
@@ -205,29 +208,50 @@ impl Pomodoro {
         let vert_buffer = frame_rect.height.saturating_sub(vert_height) / 2;
         let hor_buffer = frame_rect.width.saturating_sub(hor_height) / 2;
 
-        let vert_chunks = Layout::default()
+        let vert_chunk = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(vert_buffer),
                 Constraint::Length(vert_height),
                 Constraint::Min(vert_buffer),
             ])
-            .split(frame.size());
+            .margin(1)
+            .split(frame.size())[1];
 
-        let hor_chunks = Layout::default()
+        let hor_chunk = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Min(hor_buffer),
                 Constraint::Length(hor_height),
                 Constraint::Min(hor_buffer),
             ])
-            .split(vert_chunks[1]);
+            .margin(1)
+            .split(vert_chunk)[1];
 
-        let pause_text = if self.current.paused {
-            "un[p]ause"
-        } else {
-            "[p]ause"
-        };
+        frame.render_widget(
+            Block::default()
+                .title(format!("Pogodoro - {}", self.state))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(self.style()),
+            hor_chunk,
+        );
+
+        let pomo_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(if self.task.desc.is_some() { 2 } else { 1 }),
+                Constraint::Length(2),
+            ])
+            .margin(1)
+            .split(hor_chunk);
+
+        // TODO: create help screen
+        // let pause_text = if self.current.paused {
+        //     "un[p]ause"
+        // } else {
+        //     "[p]ause"
+        // };
 
         let task_text = if let Some(desc) = &self.task.desc {
             format!("Working on: {}\n", desc)
@@ -235,23 +259,19 @@ impl Pomodoro {
             "".into()
         };
 
-        let pomo_text = format!(
-            "{}Remaining: {}\nFinished: {}\n\n[n]ext [q]uit {}",
-            task_text, self.current, self.task.pomos_finished, pause_text
-        );
+        let pomo_text = format!("{}Finished: {}", task_text, self.task.pomos_finished);
 
-        let pomo_widget = Paragraph::new(pomo_text)
-            .block(
-                Block::default()
-                    .title(format!("Pogodoro — {}", self.state))
-                    .title_alignment(Alignment::Center)
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(self.style()),
-            )
-            .alignment(Alignment::Center);
+        let pomo_par = Paragraph::new(pomo_text).alignment(Alignment::Left);
 
-        frame.render_widget(pomo_widget, hor_chunks[1]);
+        frame.render_widget(pomo_par, pomo_chunks[0]);
+
+        let gauge = Gauge::default()
+            .block(Block::default().title(format!("Remaining: {}", self.current)))
+            .gauge_style(self.style())
+            .ratio(self.current.elapsed.as_secs_f64() / self.current.dur.as_secs_f64())
+            .use_unicode(true);
+
+        frame.render_widget(gauge, pomo_chunks[1]);
     }
 
     pub fn should_finish(&self, key: &KeyEvent) -> bool {
