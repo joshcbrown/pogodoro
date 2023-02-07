@@ -19,7 +19,7 @@ pub struct Task {
     pub work_dur: Duration,
     pub short_break_dur: Duration,
     pub long_break_dur: Duration,
-    pub num_completed: u32,
+    pub pomos_finished: u32,
     pub completed: bool,
 }
 
@@ -31,7 +31,7 @@ impl Default for Task {
             work_dur: Duration::from_secs(60 * 25),
             short_break_dur: Duration::from_secs(60 * 5),
             long_break_dur: Duration::from_secs(60 * 15),
-            num_completed: 0,
+            pomos_finished: 0,
             completed: false,
         }
     }
@@ -122,13 +122,13 @@ impl TasksState {
     }
 
     pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
-        // TODO: tidy
         match self.input_state {
             InputState::Normal => match key.code {
-                KeyCode::Char('i') => {
+                KeyCode::Char('i') | KeyCode::Tab => {
                     self.input_state = InputState::Insert;
-                    self.input.0.next()
+                    self.input.next()
                 }
+                // allow user to complete task
                 KeyCode::Char('c') => {
                     if let Some(task) = self.tasks.selected() {
                         db::set_done(task.id.unwrap() as i64).await;
@@ -152,10 +152,9 @@ impl TasksState {
                         self.input.0.focused = None
                     }
                     KeyCode::Tab => self.input.0.next(),
-                    // TODO: only accept non-empty descs
                     KeyCode::Enter => {
-                        let (desc, work_dur, sb_dur, lb_dur) = self.input.get_task();
-                        let new_task = db::write_return(desc, work_dur, sb_dur, lb_dur)
+                        let (desc, work_secs, sb_secs, lb_secs) = self.input.get_task();
+                        let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
                             .await
                             .unwrap();
                         self.tasks.items.push(new_task)
@@ -166,8 +165,7 @@ impl TasksState {
                     _ => {}
                 }
                 if key.code == KeyCode::Char('u') && key.modifiers == KeyModifiers::CONTROL {
-                    // TODO: fix this
-                    self.input.0.clear()
+                    self.input.clear()
                 };
             }
         };
@@ -308,6 +306,7 @@ impl Default for TaskInput {
 }
 
 impl TaskInput {
+    // HACK: this is kinda inheritance but not sure what else I should do
     pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
         self.0.render_on(frame, chunk)
     }
@@ -318,6 +317,14 @@ impl TaskInput {
 
     fn pop(&mut self) -> Option<char> {
         self.0.pop()
+    }
+
+    fn next(&mut self) {
+        self.0.next()
+    }
+
+    fn clear(&mut self) {
+        self.0.clear()
     }
 
     fn parse_secs(&mut self, i: usize, default: Duration) -> i64 {

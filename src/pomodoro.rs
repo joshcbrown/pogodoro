@@ -156,13 +156,13 @@ impl Pomodoro {
     async fn change_timers(&mut self) {
         (self.state, self.current) = match self.state {
             PomodoroState::Work => {
-                self.task.num_completed += 1;
+                self.task.pomos_finished += 1;
                 if let Some(id) = self.task.id {
-                    db::set_finished(id as i64, self.task.num_completed as i64)
+                    db::set_finished(id as i64, self.task.pomos_finished as i64)
                         .await
                         .unwrap();
                 }
-                if self.task.num_completed % 4 == 0 {
+                if self.task.pomos_finished % 4 == 0 {
                     (
                         PomodoroState::LongBreak,
                         Timer::new(self.task.long_break_dur),
@@ -237,7 +237,7 @@ impl Pomodoro {
 
         let pomo_text = format!(
             "{}Remaining: {}\nFinished: {}\n\n[n]ext [q]uit {}",
-            task_text, self.current, self.task.num_completed, pause_text
+            task_text, self.current, self.task.pomos_finished, pause_text
         );
 
         let pomo_widget = Paragraph::new(pomo_text)
@@ -259,7 +259,6 @@ impl Pomodoro {
     }
 
     pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<u32> {
-        // BUG: not handling incrementation of num_completed
         match key.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
             KeyCode::Char('n') => self.change_timers().await,

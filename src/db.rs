@@ -7,14 +7,14 @@ use std::time::Duration;
 const CFG_PATH_STR: &str = ".config/pogodoro/";
 const DB_NAME: &str = "records.db";
 
-pub async fn get_conn() -> Result<SqliteConnection, sqlx::Error> {
-    SqliteConnection::connect(crate::db::path().to_str().unwrap()).await
+pub async fn get_conn() -> SqliteConnection {
+    SqliteConnection::connect(crate::db::path().to_str().unwrap())
+        .await
+        .expect("couldn't connect to database")
 }
 
 pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
-    let mut conn = SqliteConnection::connect(crate::db::path().to_str().unwrap())
-        .await
-        .unwrap();
+    let mut conn = get_conn().await;
     let vec = query!("SELECT rowid, * FROM tasks WHERE completed = 0")
         .map(|task| Task {
             desc: task.desc,
@@ -22,7 +22,7 @@ pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
             work_dur: Duration::from_secs(task.task_dur as u64),
             short_break_dur: Duration::from_secs(task.short_break_dur as u64),
             long_break_dur: Duration::from_secs(task.long_break_dur as u64),
-            num_completed: task.num_completed as u32,
+            pomos_finished: task.pomos_finished as u32,
             completed: if task.completed == 1 { true } else { false },
         })
         .fetch_all(&mut conn)
@@ -30,13 +30,14 @@ pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
     Ok(vec)
 }
 
-pub async fn write_return(
+pub async fn write_and_return_task(
     desc: String,
     work_dur: i64,
     short_break_dur: i64,
     long_break_dur: i64,
 ) -> Result<Task, sqlx::Error> {
-    let mut conn = get_conn().await?;
+    let mut conn = get_conn().await;
+    // put task in DB
     query!(
         "INSERT INTO tasks VALUES (?, ?, ?, ?, 0, 0)",
         desc,
@@ -46,6 +47,7 @@ pub async fn write_return(
     )
     .execute(&mut conn)
     .await?;
+    // extract newly created task from db
     query!("SELECT rowid, * FROM tasks ORDER BY rowid DESC")
         .map(|task| Task {
             desc: task.desc,
@@ -53,7 +55,7 @@ pub async fn write_return(
             work_dur: Duration::from_secs(task.task_dur as u64),
             short_break_dur: Duration::from_secs(task.short_break_dur as u64),
             long_break_dur: Duration::from_secs(task.long_break_dur as u64),
-            num_completed: task.num_completed as u32,
+            pomos_finished: task.pomos_finished as u32,
             completed: if task.completed == 1 { true } else { false },
         })
         .fetch_one(&mut conn)
@@ -61,9 +63,9 @@ pub async fn write_return(
 }
 
 pub async fn set_finished(id: i64, finished: i64) -> Result<(), sqlx::Error> {
-    let mut conn = get_conn().await?;
+    let mut conn = get_conn().await;
     query!(
-        "UPDATE tasks SET num_completed = ? WHERE rowid = ?",
+        "UPDATE tasks SET pomos_finished = ? WHERE rowid = ?",
         finished,
         id
     )
@@ -73,9 +75,7 @@ pub async fn set_finished(id: i64, finished: i64) -> Result<(), sqlx::Error> {
 }
 
 pub async fn set_done(id: i64) {
-    let mut conn = SqliteConnection::connect(crate::db::path().to_str().unwrap())
-        .await
-        .unwrap();
+    let mut conn = get_conn().await;
     query!("UPDATE tasks SET completed = 1 WHERE rowid = ?", id)
         .execute(&mut conn)
         .await
