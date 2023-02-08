@@ -1,8 +1,6 @@
 use crate::tasks::Task;
-use sqlx::Connection;
-use sqlx::{query, SqliteConnection};
+use sqlx::{query, query_as, Connection, SqliteConnection};
 use std::path::PathBuf;
-use std::time::Duration;
 
 const CFG_PATH_STR: &str = ".config/pogodoro/";
 const DB_NAME: &str = "records.db";
@@ -15,16 +13,7 @@ pub async fn get_conn() -> SqliteConnection {
 
 pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
     let mut conn = get_conn().await;
-    let vec = query!("SELECT rowid, * FROM tasks WHERE completed = 0")
-        .map(|task| Task {
-            desc: task.desc,
-            id: Some(task.rowid as u32),
-            work_dur: Duration::from_secs(task.task_dur as u64),
-            short_break_dur: Duration::from_secs(task.short_break_dur as u64),
-            long_break_dur: Duration::from_secs(task.long_break_dur as u64),
-            pomos_finished: task.pomos_finished as u32,
-            completed: task.completed == 1,
-        })
+    let vec = query_as("SELECT * FROM tasks WHERE completed = 0")
         .fetch_all(&mut conn)
         .await?;
     Ok(vec)
@@ -39,7 +28,11 @@ pub async fn write_and_return_task(
     let mut conn = get_conn().await;
     // put task in DB
     query!(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?, 0, 0)",
+        "
+INSERT INTO tasks 
+    (desc, work_secs, short_break_secs, long_break_secs, pomos_finished, completed) 
+VALUES (?, ?, ?, ?, 0, 0)
+        ",
         desc,
         work_secs,
         short_break_secs,
@@ -48,16 +41,7 @@ pub async fn write_and_return_task(
     .execute(&mut conn)
     .await?;
     // extract newly created task from db
-    query!("SELECT rowid, * FROM tasks ORDER BY rowid DESC")
-        .map(|task| Task {
-            desc: task.desc,
-            id: Some(task.rowid as u32),
-            work_dur: Duration::from_secs(task.task_dur as u64),
-            short_break_dur: Duration::from_secs(task.short_break_dur as u64),
-            long_break_dur: Duration::from_secs(task.long_break_dur as u64),
-            pomos_finished: task.pomos_finished as u32,
-            completed: task.completed == 1,
-        })
+    query_as("SELECT * FROM tasks ORDER BY rowid DESC")
         .fetch_one(&mut conn)
         .await
 }

@@ -1,14 +1,12 @@
-use crate::db;
-use crate::tasks::Task;
-use crate::tasks::TasksState;
+use crate::{
+    args::{Commands, Start},
+    db,
+    pomodoro::Pomodoro,
+    tasks::{Task, TasksState},
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::error;
-use std::time::Duration;
-use tui::backend::Backend;
-use tui::Frame;
-
-use crate::args::{Commands, Start};
-use crate::pomodoro::Pomodoro;
+use tui::{backend::Backend, Frame};
 
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -22,14 +20,14 @@ impl AppState {
     pub async fn new(ops: Option<Commands>) -> Self {
         match ops {
             Some(Commands::Start(Start {
-                work_dur,
-                short_break_dur,
-                long_break_dur,
+                work_mins,
+                short_break_mins,
+                long_break_mins,
             })) => Self::Working(Pomodoro::default().assign(Task {
-                work_dur: Duration::from_secs(work_dur * 60),
-                short_break_dur: Duration::from_secs(short_break_dur * 60),
-                long_break_dur: Duration::from_secs(long_break_dur * 60),
-                ..Default::default()
+                work_secs: work_mins * 60,
+                short_break_secs: short_break_mins * 60,
+                long_break_secs: long_break_mins * 60,
+                ..Task::default()
             })),
 
             None => Self::Tasks(TasksState::new().await.unwrap()),

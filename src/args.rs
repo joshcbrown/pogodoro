@@ -20,9 +20,9 @@ pub enum Commands {
 #[derive(Args)]
 pub struct Start {
     /// Duration of each working session in minutes
-    pub work_dur: u64,
+    pub work_mins: u64,
     /// Duration of each short break in minutes
-    pub short_break_dur: u64,
+    pub short_break_mins: u64,
     /// Duration of each long break in minutes
-    pub long_break_dur: u64,
+    pub long_break_mins: u64,
 }

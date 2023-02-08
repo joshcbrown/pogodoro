@@ -1,5 +1,4 @@
-use crate::db;
-use crate::tasks::Task;
+use crate::{db, tasks::Task};
 use crossterm::event::{KeyCode, KeyEvent};
 use notify_rust::Notification;
 use std::{
@@ -129,7 +128,7 @@ const HELP_TEXT: &str = "[p] - toggle pause on current pomo
 impl Default for Pomodoro {
     fn default() -> Self {
         let task = Task::default();
-        let mut first_timer = Timer::new(task.work_dur);
+        let mut first_timer = Timer::new(Duration::from_secs(task.work_secs));
         first_timer.update();
         Self {
             id: None,
@@ -143,7 +142,7 @@ impl Default for Pomodoro {
 
 impl Pomodoro {
     pub fn assign(self, task: Task) -> Self {
-        let mut current = Timer::new(task.work_dur);
+        let mut current = Timer::new(Duration::from_secs(task.work_secs));
         current.update();
         Self {
             task,
@@ -171,18 +170,19 @@ impl Pomodoro {
                 if self.task.pomos_finished % 4 == 0 {
                     (
                         PomodoroState::LongBreak,
-                        Timer::new(self.task.long_break_dur),
+                        Timer::new(Duration::from_secs(self.task.long_break_secs)),
                     )
                 } else {
                     (
                         PomodoroState::ShortBreak,
-                        Timer::new(self.task.short_break_dur),
+                        Timer::new(Duration::from_secs(self.task.short_break_secs)),
                     )
                 }
             }
-            PomodoroState::ShortBreak | PomodoroState::LongBreak => {
-                (PomodoroState::Work, Timer::new(self.task.work_dur))
-            }
+            PomodoroState::ShortBreak | PomodoroState::LongBreak => (
+                PomodoroState::Work,
+                Timer::new(Duration::from_secs(self.task.work_secs)),
+            ),
         };
         self.state.notify();
         self.current.update();

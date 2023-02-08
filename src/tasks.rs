@@ -1,41 +1,26 @@
-use std::iter::repeat;
-use std::time::Duration;
-
-use crate::db;
-use crate::pomodoro::centered_rect;
+use crate::{db, pomodoro::centered_rect};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tui::backend::Backend;
-use tui::layout::{Constraint, Direction, Layout, Rect};
-use tui::style::{Color, Modifier, Style};
-use tui::text::Spans;
-use tui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph};
-use tui::Frame;
+use sqlx::{sqlite::SqliteRow, FromRow, Row};
+use std::iter::repeat;
+use tui::{
+    backend::Backend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::Spans,
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
+    Frame,
+};
 use unicode_width::UnicodeWidthStr;
 
-// TODO: make the durs into num of secs, id into i64
 #[derive(Clone, Debug)]
 pub struct Task {
     pub id: Option<u32>,
     pub desc: Option<String>,
-    pub work_dur: Duration,
-    pub short_break_dur: Duration,
-    pub long_break_dur: Duration,
+    pub work_secs: u64,
+    pub short_break_secs: u64,
+    pub long_break_secs: u64,
     pub pomos_finished: u32,
     pub completed: bool,
-}
-
-impl Default for Task {
-    fn default() -> Self {
-        Self {
-            id: None,
-            desc: None,
-            work_dur: Duration::from_secs(60 * 25),
-            short_break_dur: Duration::from_secs(60 * 5),
-            long_break_dur: Duration::from_secs(60 * 15),
-            pomos_finished: 0,
-            completed: false,
-        }
-    }
 }
 
 impl ToString for Task {
@@ -45,10 +30,50 @@ impl ToString for Task {
         format!(
             "{} || {}/{}/{}",
             self.desc.as_ref().unwrap(),
-            self.work_dur.as_secs() / 60,
-            self.short_break_dur.as_secs() / 60,
-            self.long_break_dur.as_secs() / 60
+            self.work_secs / 60,
+            self.short_break_secs / 60,
+            self.long_break_secs / 60
         )
+    }
+}
+
+impl Default for Task {
+    fn default() -> Self {
+        Self {
+            id: None,
+            desc: None,
+            work_secs: 25 * 60,
+            short_break_secs: 5 * 60,
+            long_break_secs: 15 * 60,
+            pomos_finished: 0,
+            completed: false,
+        }
+    }
+}
+
+impl FromRow<'_, SqliteRow> for Task {
+    fn from_row(row: &SqliteRow) -> sqlx::Result<Self> {
+        // think all these unwraps are ok because these values
+        // will never be high enough to panic on conversion
+        // (unless you try really really hard)
+        Ok(Self {
+            id: Some(row.try_get("id")?),
+            desc: row.try_get("desc")?,
+            work_secs: row.try_get::<i64, &str>("work_secs")?.try_into().unwrap(),
+            short_break_secs: row
+                .try_get::<i64, &str>("short_break_secs")?
+                .try_into()
+                .unwrap(),
+            long_break_secs: row
+                .try_get::<i64, &str>("long_break_secs")?
+                .try_into()
+                .unwrap(),
+            pomos_finished: row
+                .try_get::<i64, &str>("pomos_finished")?
+                .try_into()
+                .unwrap(),
+            completed: row.try_get("completed")?,
+        })
     }
 }
 
@@ -351,6 +376,8 @@ impl Default for TaskInput {
     }
 }
 
+const DEFAULT_SECS: (u64, u64, u64) = (25 * 60, 5 * 60, 15 * 60);
+
 impl TaskInput {
     // HACK: this is kinda inheritance but not sure what else I should do
     pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
@@ -373,19 +400,18 @@ impl TaskInput {
         self.0.clear()
     }
 
-    fn parse_secs(&mut self, i: usize, default: Duration) -> i64 {
+    fn parse_secs(&mut self, i: usize, default: u64) -> i64 {
         let text: &mut String = &mut self.0.inputs[i].text;
         text.drain(..)
             .collect::<String>()
             .parse::<i64>()
-            .unwrap_or((default.as_secs() / 60) as i64)
+            .unwrap_or((default / 60) as i64)
     }
 
     fn get_task(&mut self) -> (String, i64, i64, i64) {
-        let default = Task::default();
-        let work_dur = self.parse_secs(1, default.work_dur);
-        let short_break_dur = self.parse_secs(2, default.short_break_dur);
-        let long_break_dur = self.parse_secs(3, default.long_break_dur);
+        let work_dur = self.parse_secs(1, DEFAULT_SECS.0);
+        let short_break_dur = self.parse_secs(2, DEFAULT_SECS.1);
+        let long_break_dur = self.parse_secs(3, DEFAULT_SECS.2);
         (
             self.0.inputs[0].text.drain(..).collect(),
             work_dur,

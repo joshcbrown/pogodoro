@@ -1,12 +1,13 @@
 use clap::Parser;
-use pogodoro::args::Cli;
-use pogodoro::db;
-use pogodoro::event::{Event, EventHandler};
-use pogodoro::states::{AppResult, AppState};
-use pogodoro::tui::Tui;
+use pogodoro::{
+    args::Cli,
+    db,
+    event::{Event, EventHandler},
+    states::{AppResult, AppState},
+    tui::Tui,
+};
 use std::io;
-use tui::backend::CrosstermBackend;
-use tui::Terminal;
+use tui::{backend::CrosstermBackend, Terminal};
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
