@@ -51,8 +51,7 @@ impl Timer {
             return;
         }
         self.paused = false;
-        self.dur -= self.elapsed;
-        self.start_time = Instant::now();
+        self.start_time = Instant::now() - self.elapsed;
         self.update()
     }
 }
@@ -225,9 +224,15 @@ impl Pomodoro {
 
         let pomo_chunk = centered_rect(width, height, frame.size());
 
+        let pause_text = if self.current.paused {
+            " — paused"
+        } else {
+            ""
+        };
+
         frame.render_widget(
             Block::default()
-                .title(format!("{}", self.state))
+                .title(format!("{}{}", self.state, pause_text))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(self.style()),
@@ -243,13 +248,6 @@ impl Pomodoro {
             ])
             .margin(1)
             .split(pomo_chunk);
-
-        // TODO: create help screen
-        // let pause_text = if self.current.paused {
-        //     "un[p]ause"
-        // } else {
-        //     "[p]ause"
-        // };
 
         let task_text = if let Some(desc) = &self.task.desc {
             format!("Working on: {}\n", desc)
