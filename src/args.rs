@@ -13,14 +13,22 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Adds task to DB
-    Add(Add),
     /// Lists incomplete tasks
     List,
+    /// Adds task to DB
+    Add(Add),
+    /// Completes a task with given ID
+    Complete(Complete),
     /// Start a pomodoro session working on task with given ID
     WorkOn(WorkOn),
     /// Starts a (non-default) pomo session
     Start(Start),
+}
+
+#[derive(Args)]
+pub struct Complete {
+    /// IDs can be listed with `pogodoro list`
+    pub id: i64,
 }
 
 #[derive(Args)]

@@ -82,7 +82,7 @@ pub async fn set_finished(id: i64, finished: i64) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-pub async fn set_done(id: i64) {
+pub async fn complete(id: i64) {
     let mut conn = get_conn().await;
     query!("UPDATE tasks SET completed = 1 WHERE rowid = ?", id)
         .execute(&mut conn)

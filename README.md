@@ -12,16 +12,18 @@
 
 ## Installation
 
-This is a Rust package, and I haven't prebuilt any binaries, so will need to be compiled. 
+This is a Rust package, and I haven't prebuilt any binaries, so will need to be compiled.
 `rustup` (the Rust version manager) can be installed [here](https://www.rust-lang.org/learn/get-started).
 
 I'm working on a cleaner way of doing this, but for the time being, installation requires `sqlx-cli`, and the creation of a folder in `~/.config`:
+
 ```bash
 cargo install sqlx-cli
 mkdir ~/.config/pogodoro
 ```
 
 From here we can proceed with actual installation:
+
 ```bash
 git clone https://github.com/joshcbrown/pogodoro.git
 cd pogodoro
@@ -31,17 +33,34 @@ cargo install --path .
 
 ## Usage
 
-See below for a brief video going through the main features of the UI:
+See below for a brief video going through the main features of the UI, which can be accessed by running just `pogodoro`:
 
 https://user-images.githubusercontent.com/80245312/217387755-ddd6638f-c5ff-4f6d-809c-62b9e0ab755b.mp4
 
 If you're confused because that went too quickly, or prefer to learn by reading, each page of the app has a built-in help page which is toggled by pressing '?'.
 
-The app can also be started without selecting a task, if you'd prefer a more minimal experience:
+All the functionality in the demo video can be replicated with command-line commands:
 
-```pogodoro start <work_dur> <short_break_dur> <long_break_dur>```
+```
+A poggers-as-hell terminal UI pomodoro timer
+
+Usage: pogodoro [COMMAND]
+
+Commands:
+  list      Lists incomplete tasks
+  add       Adds task to DB
+  complete  Completes a task with given ID
+  work-on   Start a pomodoro session working on task with given ID
+  start     Starts a (non-default) pomo session
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help information
+  -V, --version  Print version information
+```
+
+All commands have dedicated help pages which can be accessed with `pogodoro <COMMAND> -h`
 
 Just for fun, I like to add `alias pog='pogodoro'` to my .zshrc :)
 
 Big shoutout to [orhun](https://github.com/orhun/)'s [tui-rs template](https://github.com/orhun/rust-tui-template), which I am using as a base for this project.
-

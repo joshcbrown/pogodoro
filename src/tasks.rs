@@ -196,7 +196,7 @@ impl TasksState {
                 // allow user to complete task
                 KeyCode::Char('c') => {
                     if let Some(task) = self.tasks.selected() {
-                        db::set_done(task.id.unwrap() as i64).await;
+                        db::complete(task.id.unwrap() as i64).await;
                         *self = Self::new().await.unwrap();
                     }
                 }

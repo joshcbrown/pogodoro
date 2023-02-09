@@ -1,5 +1,5 @@
 use crate::{
-    args::{Add, Command, Start, WorkOn},
+    args::{Add, Command, Complete, Start, WorkOn},
     db,
     pomodoro::Pomodoro,
     tasks::{Task, TasksState},
@@ -53,6 +53,10 @@ impl AppState {
                 Command::WorkOn(WorkOn { id }) => {
                     Self::Working(Pomodoro::default().assign(db::read_task(id).await.unwrap()))
                 }
+                Command::Complete(Complete { id }) => {
+                    db::complete(id).await;
+                    None?
+                }
             }
         } else {
             Self::Tasks(TasksState::new().await.unwrap())
@@ -96,7 +100,7 @@ impl AppState {
                 }
                 // check if user has completed the pomo, return to tasks if so
                 if let Some(id) = pomo.handle_key_event(event).await {
-                    db::set_done(id as i64).await;
+                    db::complete(id as i64).await;
                     *self = AppState::Tasks(TasksState::new().await.unwrap())
                 }
             }
