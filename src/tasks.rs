@@ -25,10 +25,9 @@ pub struct Task {
 
 impl ToString for Task {
     fn to_string(&self) -> String {
-        // TODO: investigate jankness
-        // possible fix: use f64 instead and store mins
         format!(
-            "{} || {}/{}/{}",
+            "{:>3}: {} || {}/{}/{}",
+            self.id.unwrap(),
             self.desc.as_ref().unwrap(),
             self.work_secs / 60,
             self.short_break_secs / 60,
@@ -151,8 +150,12 @@ impl TasksState {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded),
             )
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-            .highlight_symbol("> ");
+            .highlight_style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::DarkGray)
+                    .bg(Color::LightBlue),
+            );
 
         self.input.render_on(frame, chunks[0]);
         frame.render_stateful_widget(task_list, chunks[1], &mut self.tasks.state);
@@ -215,15 +218,10 @@ impl TasksState {
                     }
                     KeyCode::Tab => self.input.0.next(),
                     KeyCode::Enter => {
-                        let (desc, work_mins, sb_mins, lb_mins) = self.input.get_task();
-                        let new_task = db::write_and_return_task(
-                            desc,
-                            work_mins * 60,
-                            sb_mins * 60,
-                            lb_mins * 60,
-                        )
-                        .await
-                        .unwrap();
+                        let (desc, work_secs, sb_secs, lb_secs) = self.input.get_task();
+                        let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
+                            .await
+                            .unwrap();
                         self.tasks.items.push(new_task)
                     }
                     KeyCode::Backspace => {
@@ -402,21 +400,23 @@ impl TaskInput {
 
     fn parse_secs(&mut self, i: usize, default: u64) -> i64 {
         let text: &mut String = &mut self.0.inputs[i].text;
-        text.drain(..)
+        (text
+            .drain(..)
             .collect::<String>()
-            .parse::<i64>()
-            .unwrap_or((default / 60) as i64)
+            .parse::<f64>()
+            .unwrap_or((default / 60) as f64)
+            * 60.0) as i64
     }
 
     fn get_task(&mut self) -> (String, i64, i64, i64) {
-        let work_dur = self.parse_secs(1, DEFAULT_SECS.0);
-        let short_break_dur = self.parse_secs(2, DEFAULT_SECS.1);
-        let long_break_dur = self.parse_secs(3, DEFAULT_SECS.2);
+        let work_secs = self.parse_secs(1, DEFAULT_SECS.0);
+        let short_break_secs = self.parse_secs(2, DEFAULT_SECS.1);
+        let long_break_secs = self.parse_secs(3, DEFAULT_SECS.2);
         (
             self.0.inputs[0].text.drain(..).collect(),
-            work_dur,
-            short_break_dur,
-            long_break_dur,
+            work_secs,
+            short_break_secs,
+            long_break_secs,
         )
     }
 }

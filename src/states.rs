@@ -1,5 +1,5 @@
 use crate::{
-    args::{Commands, Start},
+    args::{Add, Command, Start, WorkOn},
     db,
     pomodoro::Pomodoro,
     tasks::{Task, TasksState},
@@ -17,21 +17,47 @@ pub enum AppState {
 }
 
 impl AppState {
-    pub async fn new(ops: Option<Commands>) -> Self {
-        match ops {
-            Some(Commands::Start(Start {
-                work_mins,
-                short_break_mins,
-                long_break_mins,
-            })) => Self::Working(Pomodoro::default().assign(Task {
-                work_secs: work_mins * 60,
-                short_break_secs: short_break_mins * 60,
-                long_break_secs: long_break_mins * 60,
-                ..Task::default()
-            })),
-
-            None => Self::Tasks(TasksState::new().await.unwrap()),
-        }
+    pub async fn parse_args(args: Option<Command>) -> Option<Self> {
+        let state: Self = if let Some(command) = args {
+            match command {
+                Command::Start(Start {
+                    work_mins,
+                    short_break_mins,
+                    long_break_mins,
+                }) => Self::Working(Pomodoro::default().assign(Task {
+                    work_secs: work_mins * 60,
+                    short_break_secs: short_break_mins * 60,
+                    long_break_secs: long_break_mins * 60,
+                    ..Task::default()
+                })),
+                Command::List => {
+                    db::print_tasks().await;
+                    None?
+                }
+                Command::Add(Add {
+                    desc,
+                    work_mins,
+                    short_break_mins,
+                    long_break_mins,
+                }) => {
+                    db::write_task(
+                        desc,
+                        work_mins as i64,
+                        short_break_mins as i64,
+                        long_break_mins as i64,
+                    )
+                    .await
+                    .unwrap();
+                    None?
+                }
+                Command::WorkOn(WorkOn { id }) => {
+                    Self::Working(Pomodoro::default().assign(db::read_task(id).await.unwrap()))
+                }
+            }
+        } else {
+            Self::Tasks(TasksState::new().await.unwrap())
+        };
+        Some(state)
     }
 
     pub async fn tick(&mut self) {

@@ -19,12 +19,25 @@ pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
     Ok(vec)
 }
 
-pub async fn write_and_return_task(
+pub async fn read_task(id: i64) -> sqlx::Result<Task> {
+    let mut conn = get_conn().await;
+    let vec = query_as(&format!("SELECT * FROM tasks WHERE id = {}", id))
+        .fetch_one(&mut conn)
+        .await?;
+    Ok(vec)
+}
+
+pub async fn print_tasks() {
+    let vec = read_tasks().await.unwrap();
+    vec.iter().for_each(|task| println!("{}", task.to_string()));
+}
+
+pub async fn write_task(
     desc: String,
     work_secs: i64,
     short_break_secs: i64,
     long_break_secs: i64,
-) -> Result<Task, sqlx::Error> {
+) -> sqlx::Result<()> {
     let mut conn = get_conn().await;
     // put task in DB
     query!(
@@ -40,6 +53,17 @@ VALUES (?, ?, ?, ?, 0, 0)
     )
     .execute(&mut conn)
     .await?;
+    Ok(())
+}
+
+pub async fn write_and_return_task(
+    desc: String,
+    work_secs: i64,
+    short_break_secs: i64,
+    long_break_secs: i64,
+) -> Result<Task, sqlx::Error> {
+    write_task(desc, work_secs, short_break_secs, long_break_secs).await?;
+    let mut conn = get_conn().await;
     // extract newly created task from db
     query_as("SELECT * FROM tasks ORDER BY rowid DESC")
         .fetch_one(&mut conn)
