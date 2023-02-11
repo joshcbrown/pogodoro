@@ -9,12 +9,12 @@
 - Persistent pomodoro sessions
 - Streamlined UI experience
 - Notifications with each cycle
-- Not a whole lot else, really
+- Support for macOS and Linux
 
 ## Installation
 
 This is a Rust package, and I haven't prebuilt any binaries, so will need to be compiled.
-`rustup` (the Rust version manager) can be installed [here](https://www.rust-lang.org/learn/get-started). Currently, only macOS and Linux are supported.
+`rustup` (the Rust version manager) can be installed [here](https://www.rust-lang.org/learn/get-started).
 
 I'm working on a cleaner way of doing this, but for the time being, installation requires `sqlx-cli`, and the creation of a folder in `~/.config`:
 
