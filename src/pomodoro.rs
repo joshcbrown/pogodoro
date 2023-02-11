@@ -1,4 +1,4 @@
-use crate::{db, tasks::Task};
+use crate::{db, states::AppResult, tasks::Task};
 use crossterm::event::{KeyCode, KeyEvent};
 use notify_rust::Notification;
 use std::{
@@ -34,7 +34,6 @@ impl Timer {
     }
 
     fn update(&mut self) {
-        // might check here later if timer is over
         if !self.paused {
             self.elapsed = self.start_time.elapsed();
         }
@@ -80,7 +79,7 @@ pub enum PomodoroState {
 }
 
 impl PomodoroState {
-    fn notify(&self) {
+    fn notify(&self) -> AppResult<()> {
         let message = match self {
             Self::Work => "time to work!",
             Self::ShortBreak => "short break time! alright man",
@@ -89,8 +88,8 @@ impl PomodoroState {
         Notification::new()
             .summary("pogodoro")
             .body(message)
-            .show()
-            .unwrap();
+            .show()?;
+        Ok(())
     }
 }
 
@@ -151,21 +150,20 @@ impl Pomodoro {
         }
     }
 
-    pub async fn update(&mut self) {
+    pub async fn update(&mut self) -> AppResult<()> {
         self.current.update();
         if self.current.is_finished() {
-            self.change_timers().await
+            self.change_timers().await?
         }
+        Ok(())
     }
 
-    async fn change_timers(&mut self) {
+    async fn change_timers(&mut self) -> AppResult<()> {
         (self.state, self.current) = match self.state {
             PomodoroState::Work => {
                 self.task.pomos_finished += 1;
                 if let Some(id) = self.task.id {
-                    db::set_finished(id as i64, self.task.pomos_finished as i64)
-                        .await
-                        .unwrap();
+                    db::set_finished(id as i64, self.task.pomos_finished as i64).await?;
                 }
                 if self.task.pomos_finished % 4 == 0 {
                     (
@@ -184,8 +182,9 @@ impl Pomodoro {
                 Timer::new(Duration::from_secs(self.task.work_secs)),
             ),
         };
-        self.state.notify();
+        self.state.notify()?;
         self.current.update();
+        Ok(())
     }
 
     pub fn style(&self) -> Style {
@@ -274,11 +273,11 @@ impl Pomodoro {
         key.code == KeyCode::Char('q') || key.code == KeyCode::Esc
     }
 
-    pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<u32> {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<Option<u32>> {
         match key.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
-            KeyCode::Char('n') => self.change_timers().await,
-            KeyCode::Enter => return self.task.id,
+            KeyCode::Char('n') => self.change_timers().await?,
+            KeyCode::Enter => return Ok(self.task.id),
             KeyCode::Char('?') => {
                 if self.show_help || !(self.show_help || self.current.paused) {
                     self.current.toggle_pause()
@@ -287,7 +286,7 @@ impl Pomodoro {
             }
             _ => {}
         }
-        None
+        Ok(None)
     }
 }
 

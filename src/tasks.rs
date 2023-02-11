@@ -1,4 +1,4 @@
-use crate::{db, pomodoro::centered_rect};
+use crate::{db, pomodoro::centered_rect, states::AppResult};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
 use std::iter::repeat;
@@ -25,6 +25,8 @@ pub struct Task {
 
 impl ToString for Task {
     fn to_string(&self) -> String {
+        // we only call this function when looking at tasks
+        // in the DB, so unwrapping is ok
         format!(
             "{:>3}: {} || {}/{}/{}",
             self.id.unwrap(),
@@ -138,8 +140,6 @@ impl TasksState {
             .tasks
             .items
             .iter()
-            // unwrapping is ok here because the only way to be on this screen
-            // is to have a valid description
             .map(|task| ListItem::new(vec![Spans::from(task.to_string())]))
             .collect();
 
@@ -185,7 +185,7 @@ impl TasksState {
         }
     }
 
-    pub async fn handle_key_event(&mut self, key: KeyEvent) -> Option<Task> {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<Option<Task>> {
         match self.input_state {
             InputState::Normal => match key.code {
                 KeyCode::Char('?') => self.input_state = InputState::Help,
@@ -196,15 +196,15 @@ impl TasksState {
                 // allow user to complete task
                 KeyCode::Char('c') => {
                     if let Some(task) = self.tasks.selected() {
-                        db::complete(task.id.unwrap() as i64).await;
-                        *self = Self::new().await.unwrap();
+                        db::complete(task.id.unwrap() as i64).await?;
+                        *self = Self::new().await?;
                     }
                 }
                 KeyCode::Down | KeyCode::Char('j') => self.tasks.next(),
                 KeyCode::Up | KeyCode::Char('k') => self.tasks.previous(),
                 KeyCode::Enter => {
                     if let Some(n) = self.tasks.state.selected() {
-                        return Some(self.tasks.items[n].clone());
+                        return Ok(Some(self.tasks.items[n].clone()));
                     }
                 }
                 _ => {}
@@ -239,7 +239,7 @@ impl TasksState {
                 }
             }
         };
-        None
+        Ok(None)
     }
 }
 
@@ -313,7 +313,6 @@ impl InputGroup {
         if self.focused.is_none() {
             return;
         }
-
         let focused_idx = self.focused.unwrap();
         let focused_input = &self.inputs[focused_idx];
 
@@ -337,24 +336,20 @@ impl InputGroup {
     }
 
     fn push(&mut self, c: char) {
-        if self.focused.is_none() {
-            return;
+        if self.focused.is_some() {
+            self.inputs[self.focused.unwrap()].push(c)
         }
-
-        self.inputs[self.focused.unwrap()].push(c)
     }
 
     fn pop(&mut self) -> Option<char> {
-        self.focused?;
-        self.inputs[self.focused.unwrap()].pop()
+        let idx = self.focused?;
+        self.inputs[idx].pop()
     }
 
     fn clear(&mut self) {
-        if self.focused.is_none() {
-            return;
+        if self.focused.is_some() {
+            self.inputs[self.focused.unwrap()].text = String::new()
         }
-
-        self.inputs[self.focused.unwrap()].text = String::new()
     }
 }
 

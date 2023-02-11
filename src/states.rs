@@ -17,7 +17,7 @@ pub enum AppState {
 }
 
 impl AppState {
-    pub async fn parse_args(args: Option<Command>) -> Option<Self> {
+    pub async fn parse_args(args: Option<Command>) -> AppResult<Option<Self>> {
         let state: Self = if let Some(command) = args {
             match command {
                 Command::Start(Start {
@@ -31,8 +31,8 @@ impl AppState {
                     ..Task::default()
                 })),
                 Command::List => {
-                    db::print_tasks().await;
-                    None?
+                    db::print_tasks().await?;
+                    return Ok(None);
                 }
                 Command::Add(Add {
                     desc,
@@ -46,28 +46,28 @@ impl AppState {
                         short_break_mins as i64,
                         long_break_mins as i64,
                     )
-                    .await
-                    .unwrap();
-                    None?
+                    .await?;
+                    return Ok(None);
                 }
                 Command::WorkOn(WorkOn { id }) => {
-                    Self::Working(Pomodoro::default().assign(db::read_task(id).await.unwrap()))
+                    Self::Working(Pomodoro::default().assign(db::read_task(id).await?))
                 }
                 Command::Complete(Complete { id }) => {
-                    db::complete(id).await;
-                    None?
+                    db::complete(id).await?;
+                    return Ok(None);
                 }
             }
         } else {
-            Self::Tasks(TasksState::new().await.unwrap())
+            Self::Tasks(TasksState::new().await?)
         };
-        Some(state)
+        Ok(Some(state))
     }
 
-    pub async fn tick(&mut self) {
+    pub async fn tick(&mut self) -> AppResult<()> {
         if let Self::Working(pomo) = self {
-            pomo.update().await
+            pomo.update().await?
         }
+        Ok(())
     }
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
@@ -78,7 +78,7 @@ impl AppState {
         }
     }
 
-    pub async fn handle_key_event(&mut self, event: KeyEvent) {
+    pub async fn handle_key_event(&mut self, event: KeyEvent) -> AppResult<()> {
         if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
             *self = AppState::Finished
         }
@@ -86,25 +86,26 @@ impl AppState {
             AppState::Tasks(tasks) => {
                 if tasks.should_finish(&event) {
                     *self = AppState::Finished;
-                    return;
+                    return Ok(());
                 }
                 // check if user has chosen some task, move on to pomo if so
-                if let Some(task) = tasks.handle_key_event(event).await {
+                if let Some(task) = tasks.handle_key_event(event).await? {
                     *self = AppState::Working(Pomodoro::default().assign(task))
                 }
             }
             AppState::Working(pomo) => {
                 if pomo.should_finish(&event) {
                     *self = AppState::Finished;
-                    return;
+                    return Ok(());
                 }
                 // check if user has completed the pomo, return to tasks if so
-                if let Some(id) = pomo.handle_key_event(event).await {
-                    db::complete(id as i64).await;
-                    *self = AppState::Tasks(TasksState::new().await.unwrap())
+                if let Some(id) = pomo.handle_key_event(event).await? {
+                    db::complete(id as i64).await?;
+                    *self = AppState::Tasks(TasksState::new().await?)
                 }
             }
             AppState::Finished => {}
         }
+        Ok(())
     }
 }

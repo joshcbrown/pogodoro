@@ -5,14 +5,12 @@ use std::path::PathBuf;
 const CFG_PATH_STR: &str = ".config/pogodoro/";
 const DB_NAME: &str = "records.db";
 
-pub async fn get_conn() -> SqliteConnection {
-    SqliteConnection::connect(crate::db::path().to_str().unwrap())
-        .await
-        .expect("couldn't connect to database")
+pub async fn get_conn() -> sqlx::Result<SqliteConnection> {
+    SqliteConnection::connect(crate::db::path().to_str().unwrap()).await
 }
 
-pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
-    let mut conn = get_conn().await;
+pub async fn read_tasks() -> sqlx::Result<Vec<Task>> {
+    let mut conn = get_conn().await?;
     let vec = query_as("SELECT * FROM tasks WHERE completed = 0")
         .fetch_all(&mut conn)
         .await?;
@@ -20,16 +18,17 @@ pub async fn read_tasks() -> Result<Vec<Task>, sqlx::Error> {
 }
 
 pub async fn read_task(id: i64) -> sqlx::Result<Task> {
-    let mut conn = get_conn().await;
+    let mut conn = get_conn().await?;
     let vec = query_as(&format!("SELECT * FROM tasks WHERE id = {}", id))
         .fetch_one(&mut conn)
         .await?;
     Ok(vec)
 }
 
-pub async fn print_tasks() {
-    let vec = read_tasks().await.unwrap();
+pub async fn print_tasks() -> sqlx::Result<()> {
+    let vec = read_tasks().await?;
     vec.iter().for_each(|task| println!("{}", task.to_string()));
+    Ok(())
 }
 
 pub async fn write_task(
@@ -38,7 +37,7 @@ pub async fn write_task(
     short_break_secs: i64,
     long_break_secs: i64,
 ) -> sqlx::Result<()> {
-    let mut conn = get_conn().await;
+    let mut conn = get_conn().await?;
     // put task in DB
     query!(
         "
@@ -63,7 +62,7 @@ pub async fn write_and_return_task(
     long_break_secs: i64,
 ) -> Result<Task, sqlx::Error> {
     write_task(desc, work_secs, short_break_secs, long_break_secs).await?;
-    let mut conn = get_conn().await;
+    let mut conn = get_conn().await?;
     // extract newly created task from db
     query_as("SELECT * FROM tasks ORDER BY rowid DESC")
         .fetch_one(&mut conn)
@@ -71,7 +70,7 @@ pub async fn write_and_return_task(
 }
 
 pub async fn set_finished(id: i64, finished: i64) -> Result<(), sqlx::Error> {
-    let mut conn = get_conn().await;
+    let mut conn = get_conn().await?;
     query!(
         "UPDATE tasks SET pomos_finished = ? WHERE rowid = ?",
         finished,
@@ -82,12 +81,12 @@ pub async fn set_finished(id: i64, finished: i64) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-pub async fn complete(id: i64) {
-    let mut conn = get_conn().await;
+pub async fn complete(id: i64) -> sqlx::Result<()> {
+    let mut conn = get_conn().await?;
     query!("UPDATE tasks SET completed = 1 WHERE rowid = ?", id)
         .execute(&mut conn)
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
 
 pub fn cfg_path() -> PathBuf {

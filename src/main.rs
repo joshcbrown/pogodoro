@@ -14,13 +14,13 @@ async fn main() -> AppResult<()> {
     // Read command line args
     let args = Cli::parse();
     // Create an application.
-    let state = AppState::parse_args(args.command).await;
+    let state = AppState::parse_args(args.command).await?;
     if state.is_none() {
         return Ok(());
     }
     let mut state = state.unwrap();
 
-    db::setup().await.unwrap();
+    db::setup().await?;
 
     // Initialize the terminal user interface.
     let backend = CrosstermBackend::new(io::stderr());
@@ -37,11 +37,15 @@ async fn main() -> AppResult<()> {
         // Render the user interface.
         tui.draw(&mut state)?;
         // Handle events.
-
-        match tui.events.next()? {
+        let result = match tui.events.next()? {
             Event::Tick => state.tick().await,
             Event::Key(key_event) => state.handle_key_event(key_event).await,
-            _ => {}
+            _ => Ok(()),
+        };
+        if let Err(e) = result {
+            tui.exit()?;
+            println!("Application error: {e}");
+            std::process::exit(1);
         }
     }
     // Exit the user interface.
