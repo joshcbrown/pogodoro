@@ -81,9 +81,9 @@ pub enum PomodoroState {
 impl PomodoroState {
     fn notify(&self) -> AppResult<()> {
         let message = match self {
-            Self::Work => "time to work!",
-            Self::ShortBreak => "short break time! alright man",
-            Self::LongBreak => "ALRIGHT! long break time man",
+            Self::Work => "Time to work!",
+            Self::ShortBreak => "Short break time!",
+            Self::LongBreak => "Long break time!",
         };
         Notification::new()
             .summary("pogodoro")
