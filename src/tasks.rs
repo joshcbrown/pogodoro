@@ -190,6 +190,7 @@ impl TasksState {
             InputState::Normal => match key.code {
                 KeyCode::Char('?') => self.input_state = InputState::Help,
                 KeyCode::Char('i') | KeyCode::Tab => {
+                    self.tasks.state.select(None);
                     self.input_state = InputState::Insert;
                     self.input.next()
                 }
@@ -216,7 +217,8 @@ impl TasksState {
                         self.input_state = InputState::Normal;
                         self.input.0.focused = None
                     }
-                    KeyCode::Tab => self.input.0.next(),
+                    KeyCode::Tab => self.input.next(),
+                    KeyCode::BackTab => self.input.previous(),
                     KeyCode::Enter => {
                         let (desc, work_secs, sb_secs, lb_secs) = self.input.get_task();
                         let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
@@ -322,17 +324,26 @@ impl InputGroup {
         )
     }
 
-    fn next(&mut self) {
-        match self.focused {
-            None => {
-                self.focused = if !self.inputs.is_empty() {
-                    Some(0)
-                } else {
-                    None
-                }
-            }
-            Some(n) => self.focused = Some((n + 1) % self.inputs.len()),
+    fn move_focus<F: Fn(usize) -> usize>(&mut self, f: F) {
+        if self.focused.is_some() {
+            self.focused = self.focused.map(f);
+            return;
         }
+        self.focused = if !self.inputs.is_empty() {
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    fn next(&mut self) {
+        let len = self.inputs.len();
+        self.move_focus(|n| (n + 1) % len)
+    }
+
+    fn previous(&mut self) {
+        let len = self.inputs.len();
+        self.move_focus(|n| if n == 0 { len - 1 } else { n - 1 })
     }
 
     fn push(&mut self, c: char) {
@@ -393,6 +404,10 @@ impl TaskInput {
         self.0.clear()
     }
 
+    fn previous(&mut self) {
+        self.0.previous()
+    }
+
     fn parse_secs(&mut self, i: usize, default: u64) -> i64 {
         let text: &mut String = &mut self.0.inputs[i].text;
         (text
@@ -416,7 +431,7 @@ impl TaskInput {
     }
 }
 
-/// struct courtesy of tui-rs's demo
+/// struct is a slightly cleaned up version of a struct in tui-rs's demo
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
@@ -439,36 +454,28 @@ impl<T> StatefulList<T> {
         }
     }
 
-    pub fn next(&mut self) {
-        self.state.select(match self.state.selected() {
-            Some(i) => Some((i + 1) % self.items.len()),
-            None => {
-                if !self.items.is_empty() {
-                    Some(0)
-                } else {
-                    None
-                }
+    pub fn move_focus<F: Fn(usize) -> usize>(&mut self, f: F) {
+        let selected = self.state.selected();
+        let new_selected = if selected.is_some() {
+            selected.map(f)
+        } else {
+            if !self.items.is_empty() {
+                Some(0)
+            } else {
+                None
             }
-        })
+        };
+        self.state.select(new_selected)
+    }
+
+    pub fn next(&mut self) {
+        let len = self.items.len();
+        self.move_focus(|i| (i + 1) % len)
     }
 
     pub fn previous(&mut self) {
-        self.state.select(match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    Some(self.items.len() - 1)
-                } else {
-                    Some(i - 1)
-                }
-            }
-            None => {
-                if !self.items.is_empty() {
-                    Some(0)
-                } else {
-                    None
-                }
-            }
-        });
+        let len = self.items.len();
+        self.move_focus(|i| if i == 0 { len - 1 } else { i - 1 })
     }
 
     pub fn selected(&self) -> Option<&T> {
