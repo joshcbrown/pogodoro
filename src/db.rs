@@ -31,6 +31,16 @@ pub async fn print_tasks() -> sqlx::Result<()> {
     Ok(())
 }
 
+pub async fn write_from_add(task: crate::args::Add) -> sqlx::Result<()> {
+    Ok(write_task(
+        task.desc,
+        task.work_mins as i64 * 60,
+        task.short_break_mins as i64 * 60,
+        task.long_break_mins as i64 * 60,
+    )
+    .await?)
+}
+
 pub async fn write_task(
     desc: String,
     work_secs: i64,

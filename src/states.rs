@@ -1,5 +1,5 @@
 use crate::{
-    args::{Add, Command, Complete, Start, WorkOn},
+    args::{Command, Complete, Start, WorkOn},
     db,
     pomodoro::Pomodoro,
     tasks::{Task, TasksState},
@@ -34,19 +34,8 @@ impl AppState {
                     db::print_tasks().await?;
                     return Ok(None);
                 }
-                Command::Add(Add {
-                    desc,
-                    work_mins,
-                    short_break_mins,
-                    long_break_mins,
-                }) => {
-                    db::write_task(
-                        desc,
-                        work_mins as i64,
-                        short_break_mins as i64,
-                        long_break_mins as i64,
-                    )
-                    .await?;
+                Command::Add(task) => {
+                    db::write_from_add(task).await?;
                     return Ok(None);
                 }
                 Command::WorkOn(WorkOn { id }) => {
