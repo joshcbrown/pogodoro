@@ -113,16 +113,15 @@ async fn get_counts_for_dates(
     Ok(counts)
 }
 
-pub async fn last_7_day_cycles() -> sqlx::Result<Vec<(NaiveDateTime, usize)>> {
+pub async fn last_n_day_cycles(n: usize) -> sqlx::Result<Vec<(NaiveDateTime, usize)>> {
     let now = Local::now().naive_local();
-    let mut dates = Vec::with_capacity(7);
-
-    for days_back in (0..7).rev() {
-        let date = now - Duration::days(days_back as i64);
-        dates.push(date);
-    }
-
-    get_counts_for_dates(dates).await
+    get_counts_for_dates(
+        (0..n)
+            .rev()
+            .map(|days_back| now - Duration::days(days_back as i64))
+            .collect(),
+    )
+    .await
 }
 
 pub async fn write_and_return_task(

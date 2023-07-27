@@ -1,4 +1,5 @@
 use crate::{db, pomodoro::centered_rect, states::AppResult};
+use chrono::NaiveDateTime;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
 use std::iter::repeat;
@@ -7,7 +8,7 @@ use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{BarChart, Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -81,6 +82,7 @@ impl FromRow<'_, SqliteRow> for Task {
 pub struct TasksState {
     tasks: StatefulList<Task>,
     input: TaskInput,
+    cycles: Vec<(String, usize)>,
     input_state: InputState,
 }
 
@@ -88,16 +90,6 @@ pub enum InputState {
     Insert,
     Normal,
     Help,
-}
-
-impl Default for TasksState {
-    fn default() -> Self {
-        Self {
-            tasks: StatefulList::default(),
-            input: TaskInput::default(),
-            input_state: InputState::Normal,
-        }
-    }
 }
 
 const HELP_TEXT: &str = "This screen has two modes: insert, and normal.
@@ -120,19 +112,32 @@ Use [?] to quit this help message into normal mode.";
 impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
         let tasks = crate::db::read_tasks().await?;
+
+        let cycles: Vec<_> = crate::db::last_n_day_cycles(30)
+            .await?
+            .iter()
+            .map(|(date, i)| (date.format("%d/%m").to_string(), *i))
+            .collect();
+
         Ok(Self {
             tasks: StatefulList {
                 items: tasks,
                 ..Default::default()
             },
-            ..Default::default()
+            input: TaskInput::default(),
+            input_state: InputState::Normal,
+            cycles,
         })
     }
 
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Percentage(20),
+            ])
             .margin(2)
             .split(frame.size());
 
@@ -159,6 +164,29 @@ impl TasksState {
 
         self.input.render_on(frame, chunks[0]);
         frame.render_stateful_widget(task_list, chunks[1], &mut self.tasks.state);
+
+        let data: Vec<_> = self
+            .cycles
+            .iter()
+            .rev()
+            .take(chunks[2].width as usize / 10)
+            .rev()
+            .map(|(date, i)| (date.as_ref(), *i as u64))
+            .collect();
+
+        let barchart = BarChart::default()
+            .block(
+                Block::default()
+                    .title("Pomos over time")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
+            )
+            .data(&data)
+            .bar_width(9)
+            .bar_style(Style::default().fg(Color::Yellow))
+            .value_style(Style::default().fg(Color::Black).bg(Color::Yellow));
+
+        frame.render_widget(barchart, chunks[2]);
 
         if let InputState::Help = &self.input_state {
             // hard coded vals for text width and height
