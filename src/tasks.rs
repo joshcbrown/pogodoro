@@ -1,5 +1,5 @@
 use crate::{db, pomodoro::centered_rect, states::AppResult};
-use chrono::NaiveDateTime;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
 use std::iter::repeat;
@@ -486,12 +486,10 @@ impl<T> StatefulList<T> {
         let selected = self.state.selected();
         let new_selected = if selected.is_some() {
             selected.map(f)
+        } else if !self.items.is_empty() {
+            Some(0)
         } else {
-            if !self.items.is_empty() {
-                Some(0)
-            } else {
-                None
-            }
+            None
         };
         self.state.select(new_selected)
     }

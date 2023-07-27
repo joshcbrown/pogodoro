@@ -280,7 +280,7 @@ impl Pomodoro {
             KeyCode::Char('n') => self.change_timers().await?,
             KeyCode::Enter => return Ok(self.task.id),
             KeyCode::Char('?') => {
-                if self.show_help || !(self.show_help || self.current.paused) {
+                if self.show_help || !self.current.paused {
                     self.current.toggle_pause()
                 }
                 self.show_help = !self.show_help
