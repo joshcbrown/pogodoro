@@ -162,6 +162,7 @@ impl Pomodoro {
         (self.state, self.current) = match self.state {
             PomodoroState::Work => {
                 self.task.pomos_finished += 1;
+                db::complete_cycle(self.task.id.map(|i| i as i64)).await?;
                 if let Some(id) = self.task.id {
                     db::set_finished(id as i64, self.task.pomos_finished as i64).await?;
                 }

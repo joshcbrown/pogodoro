@@ -8,3 +8,11 @@ CREATE TABLE tasks (
   -- bool value
   completed BOOLEAN NOT NULL DEFAULT 0
 );
+
+
+CREATE TABLE cycles (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
