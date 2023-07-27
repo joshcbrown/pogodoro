@@ -6,7 +6,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Spans,
+    text::Line,
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
@@ -140,7 +140,7 @@ impl TasksState {
             .tasks
             .items
             .iter()
-            .map(|task| ListItem::new(vec![Spans::from(task.to_string())]))
+            .map(|task| ListItem::new(vec![Line::from(task.to_string())]))
             .collect();
 
         let task_list = List::new(task_list)
@@ -259,7 +259,7 @@ impl UserInput {
     }
 
     fn to_widget(&self, focused: Option<bool>) -> Paragraph {
-        Paragraph::new(self.text.as_ref())
+        Paragraph::new(self.text.clone())
             .style(if let Some(true) = focused {
                 Style::default().fg(Color::Yellow)
             } else {
@@ -308,7 +308,7 @@ impl InputGroup {
             )
             .split(chunk);
 
-        for (i, (input, sub_chunk)) in self.inputs.iter().zip(&sub_chunks).enumerate() {
+        for (i, (input, sub_chunk)) in self.inputs.iter().zip(sub_chunks.iter()).enumerate() {
             frame.render_widget(input.to_widget(self.focused.map(|j| i == j)), *sub_chunk)
         }
 
