@@ -133,11 +133,7 @@ impl TasksState {
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(0),
-                Constraint::Percentage(20),
-            ])
+            .constraints([Constraint::Min(0), Constraint::Percentage(20)])
             .margin(2)
             .split(frame.size());
 
@@ -162,14 +158,16 @@ impl TasksState {
                     .bg(Color::LightBlue),
             );
 
-        self.input.render_on(frame, chunks[0]);
-        frame.render_stateful_widget(task_list, chunks[1], &mut self.tasks.state);
+        if let InputState::Insert = self.input_state {
+            self.input.render_on(frame);
+        }
+        frame.render_stateful_widget(task_list, chunks[0], &mut self.tasks.state);
 
         let data: Vec<_> = self
             .cycles
             .iter()
             .rev()
-            .take(chunks[2].width as usize / 10)
+            .take(chunks[1].width as usize / 10)
             .rev()
             .map(|(date, i)| (date.as_ref(), *i as u64))
             .collect();
@@ -186,7 +184,7 @@ impl TasksState {
             .bar_style(Style::default().fg(Color::Yellow))
             .value_style(Style::default().fg(Color::Black).bg(Color::Yellow));
 
-        frame.render_widget(barchart, chunks[2]);
+        frame.render_widget(barchart, chunks[1]);
 
         if let InputState::Help = &self.input_state {
             // hard coded vals for text width and height
@@ -321,20 +319,24 @@ pub struct InputGroup {
 }
 
 impl InputGroup {
-    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
+    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         if self.inputs.is_empty() {
             return;
         }
 
-        let percentage = Constraint::Percentage(100 / self.inputs.len() as u16);
+        let height = self.inputs.len() * 3;
+        let width = frame.size().width / 3;
+        let rect = centered_rect(width, height as u16, frame.size());
+        frame.render_widget(Clear, rect);
+
         let sub_chunks = Layout::default()
-            .direction(Direction::Horizontal)
+            .direction(Direction::Vertical)
             .constraints(
-                repeat(percentage)
+                repeat(Constraint::Length(3))
                     .take(self.inputs.len())
                     .collect::<Vec<Constraint>>(),
             )
-            .split(chunk);
+            .split(rect);
 
         for (i, (input, sub_chunk)) in self.inputs.iter().zip(sub_chunks.iter()).enumerate() {
             frame.render_widget(input.to_widget(self.focused.map(|j| i == j)), *sub_chunk)
@@ -412,8 +414,8 @@ const DEFAULT_SECS: (u64, u64, u64) = (25 * 60, 5 * 60, 15 * 60);
 
 impl TaskInput {
     // HACK: this is kinda inheritance but not sure what else I should do
-    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
-        self.0.render_on(frame, chunk)
+    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
+        self.0.render_on(frame)
     }
 
     fn push(&mut self, c: char) {
