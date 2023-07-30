@@ -6,6 +6,7 @@ use std::iter::repeat;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
+    prelude::Margin,
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{BarChart, Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
@@ -158,10 +159,10 @@ impl TasksState {
                     .bg(Color::LightBlue),
             );
 
+        frame.render_stateful_widget(task_list, chunks[0], &mut self.tasks.state);
         if let InputState::Insert = self.input_state {
             self.input.render_on(frame);
         }
-        frame.render_stateful_widget(task_list, chunks[0], &mut self.tasks.state);
 
         let data: Vec<_> = self
             .cycles
@@ -324,10 +325,17 @@ impl InputGroup {
             return;
         }
 
-        let height = self.inputs.len() * 3;
+        let height = self.inputs.len() * 3 + 2;
         let width = frame.size().width / 3;
-        let rect = centered_rect(width, height as u16, frame.size());
-        frame.render_widget(Clear, rect);
+        let outer_rect = centered_rect(width, height as u16, frame.size());
+        let outer_block = Block::default().title("Create task").borders(Borders::ALL);
+        let rect = outer_block.inner(outer_rect);
+        frame.render_widget(outer_block, outer_rect);
+
+        // let rect = outer_rect.inner(&Margin {
+        //     vertical: 1,
+        //     horizontal: 1,
+        // });
 
         let sub_chunks = Layout::default()
             .direction(Direction::Vertical)
