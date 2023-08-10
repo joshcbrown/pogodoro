@@ -1,10 +1,8 @@
 use crate::tasks::Task;
 use chrono::{Duration, Local, NaiveDateTime};
 use sqlx::{query, query_as, Connection, Encode, FromRow, SqliteConnection};
+use std::env;
 use std::path::PathBuf;
-
-const CFG_PATH_STR: &str = ".config/pogodoro/";
-const DB_NAME: &str = "records.db";
 
 #[derive(Debug, FromRow, Encode)]
 pub struct Cycle {
@@ -158,16 +156,10 @@ pub async fn complete(id: i64) -> sqlx::Result<()> {
     Ok(())
 }
 
-pub fn cfg_path() -> PathBuf {
-    let mut path = dir::home_dir().unwrap();
-    path.push(CFG_PATH_STR);
-    path
-}
-
 pub fn path() -> PathBuf {
-    let mut path = cfg_path();
-    path.push(DB_NAME);
-    path
+    let mut path = env::var("HOME").unwrap();
+    path.push_str("/.config/pogodoro/records.db");
+    path.into()
 }
 
 pub async fn setup() -> Result<(), sqlx::Error> {
