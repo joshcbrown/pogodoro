@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.0.32", features = ["derive"] }
 crossterm = "0.25.0"
-dir = "0.1.2"
 notify-rust = "4.7.0"
 sqlx = { version = "0.6", features = [
     "runtime-tokio-rustls",
@@ -18,3 +17,5 @@ tokio = { version = "1", features = ["full"] }
 tui = { package = "ratatui", version = "0.22.0", features = ["all-widgets"] }
 unicode-width = "0.1.10"
 chrono = "0.4.26"
+log = "0.4.19"
+flexi_logger = "0.25.6"

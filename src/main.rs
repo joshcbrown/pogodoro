@@ -1,4 +1,5 @@
 use clap::Parser;
+use flexi_logger::{FileSpec, Logger};
 use pogodoro::{
     args::Cli,
     db,
@@ -20,6 +21,10 @@ async fn main() -> AppResult<()> {
     }
     let mut state = state.unwrap();
 
+    Logger::try_with_env()?
+        .log_to_file(FileSpec::default())
+        .print_message()
+        .start()?;
     db::setup().await?;
 
     // Initialize the terminal user interface.
