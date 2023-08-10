@@ -5,8 +5,7 @@ use sqlx::{sqlite::SqliteRow, FromRow, Row};
 use std::iter::repeat;
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Rect},
-    prelude::Margin,
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{BarChart, Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
@@ -134,7 +133,7 @@ impl TasksState {
     pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Percentage(20)])
+            .constraints([Constraint::Min(0), Constraint::Percentage(30)])
             .margin(2)
             .split(frame.size());
 
@@ -326,7 +325,7 @@ impl InputGroup {
         }
 
         let height = self.inputs.len() * 3 + 2;
-        let width = frame.size().width / 3;
+        let width = std::cmp::max(50, frame.size().width / 3);
         let outer_rect = centered_rect(width, height as u16, frame.size());
         let outer_block = Block::default().title("Create task").borders(Borders::ALL);
         let rect = outer_block.inner(outer_rect);
