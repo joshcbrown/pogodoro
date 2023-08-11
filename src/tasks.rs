@@ -6,9 +6,13 @@ use std::iter::repeat;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
+    prelude::Rect,
     style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{BarChart, Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
+    text::{Line, Text},
+    widgets::{
+        BarChart, Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState, Paragraph,
+        Row as TableRow, Table, TableState,
+    },
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -79,8 +83,21 @@ impl FromRow<'_, SqliteRow> for Task {
     }
 }
 
+impl Task {
+    fn to_table_row(&self) -> TableRow {
+        let cells = [
+            // TODO: come back and fix this unwrap when checking is done on task input
+            Cell::from(self.desc.clone().unwrap()),
+            Cell::from((self.work_secs / 60).to_string()),
+            Cell::from((self.short_break_secs / 60).to_string()),
+            Cell::from((self.long_break_secs / 60).to_string()),
+        ];
+        TableRow::new(cells)
+    }
+}
+
 pub struct TasksState {
-    tasks: StatefulList<Task>,
+    tasks: TaskTable,
     input: TaskInput,
     cycles: Vec<(String, usize)>,
     input_state: InputState,
@@ -120,7 +137,7 @@ impl TasksState {
             .collect();
 
         Ok(Self {
-            tasks: StatefulList {
+            tasks: TaskTable {
                 items: tasks,
                 ..Default::default()
             },
@@ -134,20 +151,40 @@ impl TasksState {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Percentage(30)])
-            .margin(2)
+            .margin(1)
             .split(frame.size());
 
-        let task_list: Vec<ListItem> = self
-            .tasks
-            .items
-            .iter()
-            .map(|task| ListItem::new(vec![Line::from(task.to_string())]))
-            .collect();
+        self.render_tasks(frame, chunks[0]);
+        self.render_barchart(frame, chunks[1]);
 
-        let task_list = List::new(task_list)
+        if let InputState::Insert = self.input_state {
+            self.input.render_on(frame);
+        }
+
+        if let InputState::Help = &self.input_state {
+            self.render_help(frame)
+        }
+    }
+
+    pub fn render_tasks<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
+        let task_list = self.tasks.items.iter().map(|task| task.to_table_row());
+
+        let header_cells = ["Task", "Work (m)", "Short break (m)", "Long break (m)"]
+            .iter()
+            .map(|&h| {
+                Cell::from(Text::styled(
+                    h,
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::ITALIC),
+                ))
+            });
+
+        let header = TableRow::new(header_cells).bottom_margin(1);
+        let task_list = Table::new(task_list)
+            .header(header)
             .block(
                 Block::default()
-                    .title("Task list")
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded),
             )
@@ -156,15 +193,23 @@ impl TasksState {
                     .add_modifier(Modifier::BOLD)
                     .fg(Color::DarkGray)
                     .bg(Color::LightBlue),
-            );
+            )
+            .widths(&[
+                Constraint::Percentage(50),
+                Constraint::Percentage(16),
+                Constraint::Percentage(17),
+                Constraint::Percentage(17),
+            ]);
 
-        frame.render_stateful_widget(task_list, chunks[0], &mut self.tasks.state);
+        frame.render_stateful_widget(task_list, chunk, &mut self.tasks.state);
+    }
 
+    fn render_barchart<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
         let data: Vec<_> = self
             .cycles
             .iter()
             .rev()
-            .take(chunks[1].width as usize / 10)
+            .take(chunk.width as usize / 10)
             .rev()
             .map(|(date, i)| (date.as_ref(), *i as u64))
             .collect();
@@ -181,26 +226,23 @@ impl TasksState {
             .bar_style(Style::default().fg(Color::Yellow))
             .value_style(Style::default().fg(Color::Black).bg(Color::Yellow));
 
-        frame.render_widget(barchart, chunks[1]);
+        frame.render_widget(barchart, chunk);
+    }
 
-        if let InputState::Insert = self.input_state {
-            self.input.render_on(frame);
-        }
-        if let InputState::Help = &self.input_state {
-            // hard coded vals for text width and height
-            let help_chunk = centered_rect(70, 18, frame.size());
+    fn render_help<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
+        // hard coded vals for text width and height
+        let help_chunk = centered_rect(70, 18, frame.size());
 
-            let help_text = Paragraph::new(HELP_TEXT)
-                .block(
-                    Block::default()
-                        .title("Help")
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded),
-                )
-                .style(Style::default().fg(Color::Yellow));
-            frame.render_widget(Clear, help_chunk);
-            frame.render_widget(help_text, help_chunk);
-        }
+        let help_text = Paragraph::new(HELP_TEXT)
+            .block(
+                Block::default()
+                    .title("Help")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
+            )
+            .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(Clear, help_chunk);
+        frame.render_widget(help_text, help_chunk);
     }
 
     pub fn should_finish(&self, key: &KeyEvent) -> bool {
@@ -470,29 +512,29 @@ impl TaskInput {
 }
 
 /// struct is a slightly cleaned up version of a struct in tui-rs's demo
-pub struct StatefulList<T> {
-    pub state: ListState,
-    pub items: Vec<T>,
+pub struct TaskTable {
+    pub state: TableState,
+    pub items: Vec<Task>,
 }
 
-impl<T> Default for StatefulList<T> {
+impl Default for TaskTable {
     fn default() -> Self {
         Self {
-            state: ListState::default(),
+            state: TableState::default(),
             items: Vec::new(),
         }
     }
 }
 
-impl<T> StatefulList<T> {
-    pub fn with_items(items: Vec<T>) -> Self {
-        StatefulList {
-            state: ListState::default(),
+impl TaskTable {
+    fn with_items(items: Vec<Task>) -> Self {
+        TaskTable {
+            state: TableState::default(),
             items,
         }
     }
 
-    pub fn move_focus<F: Fn(usize) -> usize>(&mut self, f: F) {
+    fn move_focus<F: Fn(usize) -> usize>(&mut self, f: F) {
         let selected = self.state.selected();
         let new_selected = if selected.is_some() {
             selected.map(f)
@@ -504,17 +546,17 @@ impl<T> StatefulList<T> {
         self.state.select(new_selected)
     }
 
-    pub fn next(&mut self) {
+    fn next(&mut self) {
         let len = self.items.len();
         self.move_focus(|i| (i + 1) % len)
     }
 
-    pub fn previous(&mut self) {
+    fn previous(&mut self) {
         let len = self.items.len();
         self.move_focus(|i| if i == 0 { len - 1 } else { i - 1 })
     }
 
-    pub fn selected(&self) -> Option<&T> {
+    fn selected(&self) -> Option<&Task> {
         Some(&self.items[self.state.selected()?])
     }
 }
