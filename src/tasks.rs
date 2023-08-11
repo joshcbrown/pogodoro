@@ -159,9 +159,6 @@ impl TasksState {
             );
 
         frame.render_stateful_widget(task_list, chunks[0], &mut self.tasks.state);
-        if let InputState::Insert = self.input_state {
-            self.input.render_on(frame);
-        }
 
         let data: Vec<_> = self
             .cycles
@@ -186,6 +183,9 @@ impl TasksState {
 
         frame.render_widget(barchart, chunks[1]);
 
+        if let InputState::Insert = self.input_state {
+            self.input.render_on(frame);
+        }
         if let InputState::Help = &self.input_state {
             // hard coded vals for text width and height
             let help_chunk = centered_rect(70, 18, frame.size());
@@ -329,6 +329,7 @@ impl InputGroup {
         let outer_rect = centered_rect(width, height as u16, frame.size());
         let outer_block = Block::default().title("Create task").borders(Borders::ALL);
         let rect = outer_block.inner(outer_rect);
+        frame.render_widget(Clear, outer_rect);
         frame.render_widget(outer_block, outer_rect);
 
         // let rect = outer_rect.inner(&Margin {
