@@ -137,10 +137,7 @@ impl TasksState {
             .collect();
 
         Ok(Self {
-            tasks: TaskTable {
-                items: tasks,
-                ..Default::default()
-            },
+            tasks: TaskTable::new(tasks),
             input: TaskInput::default(),
             input_state: InputState::Normal,
             cycles,
@@ -167,7 +164,7 @@ impl TasksState {
     }
 
     pub fn render_tasks<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
-        let task_list = self.tasks.items.iter().map(|task| task.to_table_row());
+        let task_list = self.tasks.tasks.iter().map(|task| task.to_table_row());
 
         let header_cells = ["Task", "Work (m)", "Short break (m)", "Long break (m)"]
             .iter()
@@ -273,7 +270,7 @@ impl TasksState {
                 KeyCode::Up | KeyCode::Char('k') => self.tasks.previous(),
                 KeyCode::Enter => {
                     if let Some(n) = self.tasks.state.selected() {
-                        return Ok(Some(self.tasks.items[n].clone()));
+                        return Ok(Some(self.tasks.tasks[n].clone()));
                     }
                 }
                 _ => {}
@@ -292,7 +289,7 @@ impl TasksState {
                         let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
                             .await
                             .unwrap();
-                        self.tasks.items.push(new_task)
+                        self.tasks.tasks.push(new_task)
                     }
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -373,11 +370,6 @@ impl InputGroup {
         let rect = outer_block.inner(outer_rect);
         frame.render_widget(Clear, outer_rect);
         frame.render_widget(outer_block, outer_rect);
-
-        // let rect = outer_rect.inner(&Margin {
-        //     vertical: 1,
-        //     horizontal: 1,
-        // });
 
         let sub_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -514,23 +506,23 @@ impl TaskInput {
 /// struct is a slightly cleaned up version of a struct in tui-rs's demo
 pub struct TaskTable {
     pub state: TableState,
-    pub items: Vec<Task>,
+    pub tasks: Vec<Task>,
 }
 
 impl Default for TaskTable {
     fn default() -> Self {
         Self {
             state: TableState::default(),
-            items: Vec::new(),
+            tasks: Vec::new(),
         }
     }
 }
 
 impl TaskTable {
-    fn with_items(items: Vec<Task>) -> Self {
+    fn new(tasks: Vec<Task>) -> Self {
         TaskTable {
-            state: TableState::default(),
-            items,
+            tasks,
+            ..Default::default()
         }
     }
 
@@ -538,7 +530,7 @@ impl TaskTable {
         let selected = self.state.selected();
         let new_selected = if selected.is_some() {
             selected.map(f)
-        } else if !self.items.is_empty() {
+        } else if !self.tasks.is_empty() {
             Some(0)
         } else {
             None
@@ -547,16 +539,16 @@ impl TaskTable {
     }
 
     fn next(&mut self) {
-        let len = self.items.len();
+        let len = self.tasks.len();
         self.move_focus(|i| (i + 1) % len)
     }
 
     fn previous(&mut self) {
-        let len = self.items.len();
+        let len = self.tasks.len();
         self.move_focus(|i| if i == 0 { len - 1 } else { i - 1 })
     }
 
     fn selected(&self) -> Option<&Task> {
-        Some(&self.items[self.state.selected()?])
+        Some(&self.tasks[self.state.selected()?])
     }
 }
