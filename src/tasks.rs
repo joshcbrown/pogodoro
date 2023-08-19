@@ -357,6 +357,20 @@ pub struct InputGroup {
     focused: Option<usize>,
 }
 
+impl Focus for InputGroup {
+    fn len(&self) -> usize {
+        self.inputs.len()
+    }
+
+    fn empty(&self) -> bool {
+        self.inputs.is_empty()
+    }
+
+    fn focus(&mut self) -> &mut Option<usize> {
+        &mut self.focused
+    }
+}
+
 impl InputGroup {
     pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         if self.inputs.is_empty() {
@@ -396,28 +410,6 @@ impl InputGroup {
         )
     }
 
-    fn move_focus<F: Fn(usize) -> usize>(&mut self, f: F) {
-        if self.focused.is_some() {
-            self.focused = self.focused.map(f);
-            return;
-        }
-        self.focused = if !self.inputs.is_empty() {
-            Some(0)
-        } else {
-            None
-        }
-    }
-
-    fn next(&mut self) {
-        let len = self.inputs.len();
-        self.move_focus(|n| (n + 1) % len)
-    }
-
-    fn previous(&mut self) {
-        let len = self.inputs.len();
-        self.move_focus(|n| if n == 0 { len - 1 } else { n - 1 })
-    }
-
     fn push(&mut self, c: char) {
         if self.focused.is_some() {
             self.inputs[self.focused.unwrap()].push(c)
@@ -452,9 +444,22 @@ impl Default for TaskInput {
     }
 }
 
-const DEFAULT_SECS: (u64, u64, u64) = (25 * 60, 5 * 60, 15 * 60);
+impl Focus for TaskInput {
+    fn empty(&self) -> bool {
+        self.0.empty()
+    }
+
+    fn focus(&mut self) -> &mut Option<usize> {
+        self.0.focus()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 impl TaskInput {
+    const DEFAULT_SECS: (u64, u64, u64) = (25 * 60, 5 * 60, 15 * 60);
     // HACK: this is kinda inheritance but not sure what else I should do
     pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         self.0.render_on(frame)
@@ -468,16 +473,8 @@ impl TaskInput {
         self.0.pop()
     }
 
-    fn next(&mut self) {
-        self.0.next()
-    }
-
     fn clear(&mut self) {
         self.0.clear()
-    }
-
-    fn previous(&mut self) {
-        self.0.previous()
     }
 
     fn parse_secs(&mut self, i: usize, default: u64) -> i64 {
@@ -491,9 +488,9 @@ impl TaskInput {
     }
 
     fn get_task(&mut self) -> (String, i64, i64, i64) {
-        let work_secs = self.parse_secs(1, DEFAULT_SECS.0);
-        let short_break_secs = self.parse_secs(2, DEFAULT_SECS.1);
-        let long_break_secs = self.parse_secs(3, DEFAULT_SECS.2);
+        let work_secs = self.parse_secs(1, Self::DEFAULT_SECS.0);
+        let short_break_secs = self.parse_secs(2, Self::DEFAULT_SECS.1);
+        let long_break_secs = self.parse_secs(3, Self::DEFAULT_SECS.2);
         (
             self.0.inputs[0].text.drain(..).collect(),
             work_secs,
