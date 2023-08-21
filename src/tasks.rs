@@ -8,10 +8,10 @@ use tui::{
     layout::{Constraint, Direction, Layout},
     prelude::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Text},
+    text::Text,
     widgets::{
-        BarChart, Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState, Paragraph,
-        Row as TableRow, Table, TableState,
+        BarChart, Block, BorderType, Borders, Cell, Clear, Paragraph, Row as TableRow, Table,
+        TableState,
     },
     Frame,
 };
@@ -97,7 +97,7 @@ impl Task {
 }
 
 pub struct TasksState {
-    tasks: TaskTable,
+    task_tables: TaskTableGroup,
     input: TaskInput,
     cycles: Vec<(String, usize)>,
     input_state: InputState,
@@ -129,6 +129,10 @@ Use [?] to quit this help message into normal mode.";
 impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
         let tasks = crate::db::read_tasks().await?;
+        let task_tables = TaskTableGroup::new(vec![
+            tasks.iter().filter(|&t| !t.completed).cloned().collect(),
+            tasks.iter().filter(|&t| t.completed).cloned().collect(),
+        ]);
 
         let cycles: Vec<_> = crate::db::last_n_day_cycles(30)
             .await?
@@ -137,7 +141,7 @@ impl TasksState {
             .collect();
 
         Ok(Self {
-            tasks: TaskTable::new(tasks),
+            task_tables,
             input: TaskInput::default(),
             input_state: InputState::Normal,
             cycles,
@@ -151,54 +155,14 @@ impl TasksState {
             .margin(1)
             .split(frame.size());
 
-        self.render_tasks(frame, chunks[0]);
+        self.task_tables.render_on(frame, chunks[0]);
         self.render_barchart(frame, chunks[1]);
 
-        if let InputState::Insert = self.input_state {
-            self.input.render_on(frame);
+        match self.input_state {
+            InputState::Insert => self.input.render_on(frame),
+            InputState::Help => self.render_help(frame),
+            _ => {}
         }
-
-        if let InputState::Help = &self.input_state {
-            self.render_help(frame)
-        }
-    }
-
-    pub fn render_tasks<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
-        let task_list = self.tasks.tasks.iter().map(|task| task.to_table_row());
-
-        let header_cells = ["Task", "Work (m)", "Short break (m)", "Long break (m)"]
-            .iter()
-            .map(|&h| {
-                Cell::from(Text::styled(
-                    h,
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .add_modifier(Modifier::ITALIC),
-                ))
-            });
-
-        let header = TableRow::new(header_cells).bottom_margin(1);
-        let task_list = Table::new(task_list)
-            .header(header)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .highlight_style(
-                Style::default()
-                    .add_modifier(Modifier::BOLD)
-                    .fg(Color::DarkGray)
-                    .bg(Color::LightBlue),
-            )
-            .widths(&[
-                Constraint::Percentage(50),
-                Constraint::Percentage(16),
-                Constraint::Percentage(17),
-                Constraint::Percentage(17),
-            ]);
-
-        frame.render_stateful_widget(task_list, chunk, &mut self.tasks.state);
     }
 
     fn render_barchart<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
@@ -254,23 +218,25 @@ impl TasksState {
         match self.input_state {
             InputState::Normal => match key.code {
                 KeyCode::Char('?') => self.input_state = InputState::Help,
-                KeyCode::Char('i') | KeyCode::Tab => {
-                    self.tasks.state.select(None);
+                KeyCode::Char('i') => {
+                    self.task_tables.focused = None;
                     self.input_state = InputState::Insert;
                     self.input.next()
                 }
                 // allow user to complete task
                 KeyCode::Char('c') => {
-                    if let Some(task) = self.tasks.selected() {
+                    if let Some(task) = self.task_tables.selected() {
                         db::complete(task.id.unwrap() as i64).await?;
                         *self = Self::new().await?;
                     }
                 }
-                KeyCode::Down | KeyCode::Char('j') => self.tasks.next(),
-                KeyCode::Up | KeyCode::Char('k') => self.tasks.previous(),
+                KeyCode::Down | KeyCode::Char('j') => self.task_tables.next_task(),
+                KeyCode::Up | KeyCode::Char('k') => self.task_tables.prev_task(),
+                KeyCode::Tab | KeyCode::Char('l') => self.task_tables.next(),
+                KeyCode::BackTab | KeyCode::Char('h') => self.task_tables.previous(),
                 KeyCode::Enter => {
-                    if let Some(n) = self.tasks.state.selected() {
-                        return Ok(Some(self.tasks.tasks[n].clone()));
+                    if let Some(task) = self.task_tables.selected() {
+                        return Ok(Some(task.clone()));
                     }
                 }
                 _ => {}
@@ -289,7 +255,7 @@ impl TasksState {
                         let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
                             .await
                             .unwrap();
-                        self.tasks.tasks.push(new_task)
+                        self.task_tables.add_task(new_task)
                     }
                     KeyCode::Backspace => {
                         self.input.pop();
@@ -372,6 +338,7 @@ impl Focus for InputGroup {
 }
 
 impl InputGroup {
+    // render the group on a frame
     pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
         if self.inputs.is_empty() {
             return;
@@ -410,12 +377,14 @@ impl InputGroup {
         )
     }
 
+    // add a char to focused input
     fn push(&mut self, c: char) {
         if self.focused.is_some() {
             self.inputs[self.focused.unwrap()].push(c)
         }
     }
 
+    // pop a char from focused input
     fn pop(&mut self) -> Option<char> {
         let idx = self.focused?;
         self.inputs[idx].pop()
@@ -441,6 +410,35 @@ impl Default for TaskInput {
             ],
             focused: None,
         })
+    }
+}
+
+trait Focus {
+    fn focus(&mut self) -> &mut Option<usize>;
+    fn empty(&self) -> bool;
+    fn len(&self) -> usize;
+    fn pre_move(&mut self) {}
+
+    fn move_focus<F: Fn(usize) -> usize>(&mut self, f: F) {
+        let empty = self.empty();
+        let focus = self.focus();
+        if focus.is_some() {
+            *focus = focus.map(f);
+            return;
+        }
+        *focus = if empty { None } else { Some(0) }
+    }
+
+    fn next(&mut self) {
+        self.pre_move();
+        let len = self.len();
+        self.move_focus(|n| (n + 1) % len);
+    }
+
+    fn previous(&mut self) {
+        self.pre_move();
+        let len = self.len();
+        self.move_focus(|n| if n == 0 { len - 1 } else { n - 1 })
     }
 }
 
@@ -500,19 +498,77 @@ impl TaskInput {
     }
 }
 
-/// struct is a slightly cleaned up version of a struct in tui-rs's demo
-pub struct TaskTable {
-    pub state: TableState,
-    pub tasks: Vec<Task>,
+struct TaskTableGroup {
+    tables: Vec<TaskTable>,
+    focused: Option<usize>,
 }
 
-impl Default for TaskTable {
-    fn default() -> Self {
-        Self {
-            state: TableState::default(),
-            tasks: Vec::new(),
+impl Focus for TaskTableGroup {
+    fn len(&self) -> usize {
+        self.tables.len()
+    }
+
+    fn focus(&mut self) -> &mut Option<usize> {
+        &mut self.focused
+    }
+
+    fn empty(&self) -> bool {
+        self.tables.is_empty()
+    }
+
+    fn pre_move(&mut self) {
+        if self.focused.is_some() {
+            self.tables[self.focused.unwrap()].state.select(None)
         }
     }
+}
+
+impl TaskTableGroup {
+    fn new(tasks: Vec<Vec<Task>>) -> Self {
+        Self {
+            tables: tasks.into_iter().map(|v| TaskTable::new(v)).collect(),
+            focused: None,
+        }
+    }
+
+    fn next_task(&mut self) {
+        if self.focused.is_none() {
+            self.next()
+        }
+        self.tables[self.focused.unwrap()].next()
+    }
+
+    fn prev_task(&mut self) {
+        if self.focused.is_none() {
+            self.next()
+        }
+        self.tables[self.focused.unwrap()].previous()
+    }
+
+    fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunk);
+
+        for (i, (table, &sub_chunk)) in self.tables.iter_mut().zip(chunks.into_iter()).enumerate() {
+            table.render_on(frame, sub_chunk, i == self.focused.unwrap_or(usize::MAX))
+        }
+    }
+
+    fn selected(&self) -> Option<&Task> {
+        self.tables[self.focused?].selected()
+    }
+
+    fn add_task(&mut self, task: Task) {
+        self.tables[0].tasks.push(task)
+    }
+}
+
+#[derive(Default)]
+struct TaskTable {
+    state: TableState,
+    tasks: Vec<Task>,
 }
 
 impl TaskTable {
@@ -547,5 +603,47 @@ impl TaskTable {
 
     fn selected(&self) -> Option<&Task> {
         Some(&self.tasks[self.state.selected()?])
+    }
+
+    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect, focused: bool) {
+        let task_list = self.tasks.iter().map(|task| task.to_table_row());
+
+        let header_cells = ["Task", "Work", "Short break", "Long break"]
+            .iter()
+            .map(|&h| {
+                Cell::from(Text::styled(
+                    h,
+                    Style::default()
+                        .fg(Color::LightBlue)
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::ITALIC),
+                ))
+            });
+
+        let header = TableRow::new(header_cells)
+            .bottom_margin(1)
+            .style(Style::default()); //.add_modifier(Modifier::UNDERLINED));
+        let border_style = if focused {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+        let task_list = Table::new(task_list)
+            .header(header)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(border_style),
+            )
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD).fg(Color::Red))
+            .widths(&[
+                Constraint::Percentage(50),
+                Constraint::Percentage(16),
+                Constraint::Percentage(17),
+                Constraint::Percentage(17),
+            ]);
+
+        frame.render_stateful_widget(task_list, chunk, &mut self.state);
     }
 }

@@ -17,9 +17,7 @@ pub async fn get_conn() -> sqlx::Result<SqliteConnection> {
 
 pub async fn read_tasks() -> sqlx::Result<Vec<Task>> {
     let mut conn = get_conn().await?;
-    let vec = query_as("SELECT * FROM tasks WHERE completed = 0")
-        .fetch_all(&mut conn)
-        .await?;
+    let vec = query_as("SELECT * FROM tasks").fetch_all(&mut conn).await?;
     Ok(vec)
 }
 
