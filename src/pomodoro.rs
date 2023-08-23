@@ -1,4 +1,8 @@
-use crate::{db, states::AppResult, tasks::Task};
+use crate::{
+    db,
+    states::{AppMessage, AppResult},
+    tasks::Task,
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use notify_rust::Notification;
 use std::{
@@ -270,15 +274,13 @@ impl Pomodoro {
         frame.render_widget(gauge, pomo_chunks[1]);
     }
 
-    pub fn should_finish(&self, key: &KeyEvent) -> bool {
-        key.code == KeyCode::Char('q') || key.code == KeyCode::Esc
-    }
-
-    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<Option<u32>> {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<AppMessage> {
         match key.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
             KeyCode::Char('n') => self.change_timers().await?,
-            KeyCode::Enter => return Ok(self.task.id),
+            KeyCode::Char('q') => return Ok(AppMessage::Finish),
+            KeyCode::Enter => return Ok(AppMessage::GoToTasks(self.task.id)),
+            KeyCode::Esc => return Ok(AppMessage::GoToTasks(None)),
             KeyCode::Char('?') => {
                 if self.show_help || !self.current.paused {
                     self.current.toggle_pause()
@@ -287,7 +289,7 @@ impl Pomodoro {
             }
             _ => {}
         }
-        Ok(None)
+        Ok(AppMessage::DoNothing)
     }
 }
 

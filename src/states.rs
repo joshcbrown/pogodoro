@@ -10,6 +10,15 @@ use tui::{backend::Backend, Frame};
 
 pub type AppResult<T> = std::result::Result<T, Box<dyn error::Error>>;
 
+pub type TaskId = u32;
+
+pub enum AppMessage {
+    Begin(Task),
+    GoToTasks(Option<TaskId>),
+    Finish,
+    DoNothing,
+}
+
 pub enum AppState {
     Tasks(TasksState),
     Working(Pomodoro),
@@ -71,30 +80,23 @@ impl AppState {
         if event.code == KeyCode::Char('c') && event.modifiers == KeyModifiers::CONTROL {
             *self = AppState::Finished
         }
-        match self {
-            AppState::Tasks(tasks) => {
-                if tasks.should_finish(&event) {
-                    *self = AppState::Finished;
-                    return Ok(());
-                }
-                // check if user has chosen some task, move on to pomo if so
-                if let Some(task) = tasks.handle_key_event(event).await? {
-                    *self = AppState::Working(Pomodoro::default().assign(task))
-                }
+        let message = match self {
+            AppState::Tasks(task) => task.handle_key_event(event).await?,
+            AppState::Working(pomo) => pomo.handle_key_event(event).await?,
+            AppState::Finished => AppMessage::DoNothing,
+        };
+
+        match message {
+            AppMessage::GoToTasks(Some(to_complete)) => {
+                db::complete(to_complete as i64).await?;
+                *self = AppState::Tasks(TasksState::new().await?)
             }
-            AppState::Working(pomo) => {
-                if pomo.should_finish(&event) {
-                    *self = AppState::Finished;
-                    return Ok(());
-                }
-                // check if user has completed the pomo, return to tasks if so
-                if let Some(id) = pomo.handle_key_event(event).await? {
-                    db::complete(id as i64).await?;
-                    *self = AppState::Tasks(TasksState::new().await?)
-                }
-            }
-            AppState::Finished => {}
+            AppMessage::GoToTasks(None) => *self = AppState::Tasks(TasksState::new().await?),
+            AppMessage::Begin(task) => *self = AppState::Working(Pomodoro::default().assign(task)),
+            AppMessage::Finish => *self = AppState::Finished,
+            AppMessage::DoNothing => {}
         }
+
         Ok(())
     }
 }

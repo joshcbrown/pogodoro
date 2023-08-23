@@ -1,4 +1,8 @@
-use crate::{db, pomodoro::centered_rect, states::AppResult};
+use crate::{
+    db,
+    pomodoro::centered_rect,
+    states::{AppMessage, AppResult},
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
@@ -206,18 +210,11 @@ impl TasksState {
         frame.render_widget(help_text, help_chunk);
     }
 
-    pub fn should_finish(&self, key: &KeyEvent) -> bool {
-        if let InputState::Normal = self.input_state {
-            key.code == KeyCode::Char('q')
-        } else {
-            false
-        }
-    }
-
-    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<Option<Task>> {
+    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<AppMessage> {
         match self.input_state {
             InputState::Normal => match key.code {
                 KeyCode::Char('?') => self.input_state = InputState::Help,
+                KeyCode::Char('q') => return Ok(AppMessage::Finish),
                 KeyCode::Char('i') => {
                     self.task_tables.focused = None;
                     self.input_state = InputState::Insert;
@@ -236,7 +233,7 @@ impl TasksState {
                 KeyCode::BackTab | KeyCode::Char('h') => self.task_tables.previous(),
                 KeyCode::Enter => {
                     if let Some(task) = self.task_tables.selected() {
-                        return Ok(Some(task.clone()));
+                        return Ok(AppMessage::Begin(task.clone()));
                     }
                 }
                 _ => {}
@@ -272,7 +269,7 @@ impl TasksState {
                 }
             }
         };
-        Ok(None)
+        Ok(AppMessage::DoNothing)
     }
 }
 
@@ -526,7 +523,7 @@ impl Focus for TaskTableGroup {
 impl TaskTableGroup {
     fn new(tasks: Vec<Vec<Task>>) -> Self {
         Self {
-            tables: tasks.into_iter().map(|v| TaskTable::new(v)).collect(),
+            tables: tasks.into_iter().map(TaskTable::new).collect(),
             focused: None,
         }
     }
@@ -551,7 +548,7 @@ impl TaskTableGroup {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunk);
 
-        for (i, (table, &sub_chunk)) in self.tables.iter_mut().zip(chunks.into_iter()).enumerate() {
+        for (i, (table, &sub_chunk)) in self.tables.iter_mut().zip(chunks.iter()).enumerate() {
             table.render_on(frame, sub_chunk, i == self.focused.unwrap_or(usize::MAX))
         }
     }
