@@ -11,10 +11,11 @@ use std::iter::repeat;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
-    prelude::Rect,
+    prelude::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::Text,
     widgets::{
+        block::{Position, Title},
         BarChart, Block, BorderType, Borders, Cell, Clear, Paragraph, Row as TableRow, Table,
         TableState,
     },
@@ -136,6 +137,8 @@ impl TasksState {
         let tasks = crate::db::read_tasks().await?;
         let (incomplete, complete): (Vec<_>, Vec<_>) =
             tasks.into_iter().partition(|t| t.completed.is_none());
+        let (new, started): (Vec<_>, Vec<_>) =
+            incomplete.into_iter().partition(|t| t.pomos_finished == 0);
         let last_day_complete: Vec<_> = complete
             .into_iter()
             .filter(|t| {
@@ -145,7 +148,11 @@ impl TasksState {
                     <= Duration::hours(24)
             })
             .collect();
-        let task_tables = TaskTableGroup::new(vec![incomplete, last_day_complete]);
+        let task_tables = TaskTableGroup::new(vec![
+            (new, "New".into()),
+            (started, "Started".into()),
+            (last_day_complete, "Completed in the last day".into()),
+        ]);
 
         let cycles: Vec<_> = crate::db::last_n_day_cycles(30)
             .await?
@@ -191,7 +198,7 @@ impl TasksState {
         let barchart = BarChart::default()
             .block(
                 Block::default()
-                    .title("Pomos over time")
+                    .title(Title::from("Pomos over time").alignment(Alignment::Center))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded),
             )
@@ -530,9 +537,12 @@ impl Focus for TaskTableGroup {
 }
 
 impl TaskTableGroup {
-    fn new(tasks: Vec<Vec<Task>>) -> Self {
+    fn new(tasks: Vec<(Vec<Task>, String)>) -> Self {
         Self {
-            tables: tasks.into_iter().map(TaskTable::new).collect(),
+            tables: tasks
+                .into_iter()
+                .map(|(tasks, title)| TaskTable::new(tasks, title))
+                .collect(),
             focused: None,
         }
     }
@@ -554,7 +564,11 @@ impl TaskTableGroup {
     fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+            ])
             .split(chunk);
 
         for (i, (table, &sub_chunk)) in self.tables.iter_mut().zip(chunks.iter()).enumerate() {
@@ -574,13 +588,15 @@ impl TaskTableGroup {
 #[derive(Default)]
 struct TaskTable {
     state: TableState,
+    title: String,
     tasks: Vec<Task>,
 }
 
 impl TaskTable {
-    fn new(tasks: Vec<Task>) -> Self {
+    fn new(tasks: Vec<Task>, title: String) -> Self {
         TaskTable {
             tasks,
+            title,
             ..Default::default()
         }
     }
@@ -638,6 +654,7 @@ impl TaskTable {
             .header(header)
             .block(
                 Block::default()
+                    .title(Title::from(self.title.clone()).alignment(Alignment::Center))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(border_style),
