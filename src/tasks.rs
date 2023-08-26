@@ -134,24 +134,18 @@ Use [?] to quit this help message into normal mode.";
 impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
         let tasks = crate::db::read_tasks().await?;
-        let task_tables = TaskTableGroup::new(vec![
-            tasks
-                .iter()
-                .filter(|&t| t.completed.is_none())
-                .cloned()
-                .collect(),
-            tasks
-                .iter()
-                .filter(|&t| {
-                    t.completed.is_some()
-                        && Local::now()
-                            .naive_local()
-                            .signed_duration_since(t.completed.unwrap())
-                            <= Duration::hours(24)
-                })
-                .cloned()
-                .collect(),
-        ]);
+        let (incomplete, complete): (Vec<_>, Vec<_>) =
+            tasks.into_iter().partition(|t| t.completed.is_none());
+        let last_day_complete: Vec<_> = complete
+            .into_iter()
+            .filter(|t| {
+                Local::now()
+                    .naive_local()
+                    .signed_duration_since(t.completed.unwrap())
+                    <= Duration::hours(24)
+            })
+            .collect();
+        let task_tables = TaskTableGroup::new(vec![incomplete, last_day_complete]);
 
         let cycles: Vec<_> = crate::db::last_n_day_cycles(30)
             .await?
