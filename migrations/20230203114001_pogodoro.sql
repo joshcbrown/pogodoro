@@ -5,8 +5,7 @@ CREATE TABLE tasks (
   short_break_secs INTEGER NOT NULL,
   long_break_secs INTEGER NOT NULL,
   pomos_finished INTEGER NOT NULL DEFAULT 0,
-  -- bool value
-  completed BOOLEAN NOT NULL DEFAULT 0
+  completed DATETIME NULL
 );
 
 

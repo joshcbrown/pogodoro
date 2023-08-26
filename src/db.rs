@@ -1,5 +1,6 @@
 use crate::tasks::Task;
-use chrono::{Duration, Local, NaiveDateTime};
+use chrono::Duration;
+use sqlx::types::chrono::{Local, NaiveDateTime};
 use sqlx::{query, query_as, Connection, Encode, FromRow, SqliteConnection};
 use std::env;
 use std::path::PathBuf;
@@ -56,8 +57,8 @@ pub async fn write_task(
     query!(
         "
 INSERT INTO tasks 
-    (desc, work_secs, short_break_secs, long_break_secs, pomos_finished, completed) 
-VALUES (?, ?, ?, ?, 0, 0)
+    (desc, work_secs, short_break_secs, long_break_secs, pomos_finished) 
+VALUES (?, ?, ?, ?, 0)
         ",
         desc,
         work_secs,
@@ -148,7 +149,8 @@ pub async fn set_finished(id: i64, finished: i64) -> Result<(), sqlx::Error> {
 
 pub async fn complete(id: i64) -> sqlx::Result<()> {
     let mut conn = get_conn().await?;
-    query!("UPDATE tasks SET completed = 1 WHERE rowid = ?", id)
+    let now = Local::now();
+    query!("UPDATE tasks SET completed = ? WHERE rowid = ?", now, id)
         .execute(&mut conn)
         .await?;
     Ok(())

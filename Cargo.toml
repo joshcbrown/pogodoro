@@ -8,10 +8,12 @@ edition = "2021"
 clap = { version = "4.0.32", features = ["derive"] }
 crossterm = "0.25.0"
 notify-rust = "4.7.0"
-sqlx = { version = "0.6", features = [
-    "runtime-tokio-rustls",
+sqlx = { version = "0.7", features = [
+    "runtime-tokio",
+    "tls-native-tls",
     "macros",
     "sqlite",
+    "chrono"
 ] }
 tokio = { version = "1", features = ["full"] }
 tui = { package = "ratatui", version = "0.22.0", features = ["all-widgets"] }

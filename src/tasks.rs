@@ -4,6 +4,7 @@ use crate::{
     states::{AppMessage, AppResult},
 };
 
+use chrono::{Duration, Local, NaiveDateTime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
 use std::iter::repeat;
@@ -29,7 +30,7 @@ pub struct Task {
     pub short_break_secs: u64,
     pub long_break_secs: u64,
     pub pomos_finished: u32,
-    pub completed: bool,
+    pub completed: Option<NaiveDateTime>,
 }
 
 impl ToString for Task {
@@ -56,7 +57,7 @@ impl Default for Task {
             short_break_secs: 5 * 60,
             long_break_secs: 15 * 60,
             pomos_finished: 0,
-            completed: false,
+            completed: None,
         }
     }
 }
@@ -134,8 +135,22 @@ impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
         let tasks = crate::db::read_tasks().await?;
         let task_tables = TaskTableGroup::new(vec![
-            tasks.iter().filter(|&t| !t.completed).cloned().collect(),
-            tasks.iter().filter(|&t| t.completed).cloned().collect(),
+            tasks
+                .iter()
+                .filter(|&t| t.completed.is_none())
+                .cloned()
+                .collect(),
+            tasks
+                .iter()
+                .filter(|&t| {
+                    t.completed.is_some()
+                        && Local::now()
+                            .naive_local()
+                            .signed_duration_since(t.completed.unwrap())
+                            <= Duration::hours(24)
+                })
+                .cloned()
+                .collect(),
         ]);
 
         let cycles: Vec<_> = crate::db::last_n_day_cycles(30)
