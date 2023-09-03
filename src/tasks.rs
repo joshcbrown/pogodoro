@@ -15,9 +15,8 @@ use tui::{
     style::{Color, Modifier, Style},
     text::Text,
     widgets::{
-        block::{Position, Title},
-        BarChart, Block, BorderType, Borders, Cell, Clear, Paragraph, Row as TableRow, Table,
-        TableState,
+        block::Title, BarChart, Block, BorderType, Borders, Cell, Clear, Paragraph,
+        Row as TableRow, Table, TableState,
     },
     Frame,
 };
@@ -42,9 +41,9 @@ impl ToString for Task {
             "{:>3}: {} || {}/{}/{}",
             self.id.unwrap(),
             self.desc.as_ref().unwrap(),
-            self.work_secs / 60,
-            self.short_break_secs / 60,
-            self.long_break_secs / 60
+            Self::format_time(self.work_secs),
+            Self::format_time(self.short_break_secs),
+            Self::format_time(self.long_break_secs),
         )
     }
 }
@@ -90,13 +89,24 @@ impl FromRow<'_, SqliteRow> for Task {
 }
 
 impl Task {
+    fn format_time(seconds: u64) -> String {
+        let mins = seconds / 60;
+        let secs = seconds % 60;
+
+        if secs == 0 {
+            format!("{}m", mins)
+        } else {
+            format!("{}m{}s", mins, secs)
+        }
+    }
+
     fn to_table_row(&self) -> TableRow {
         let cells = [
             // TODO: come back and fix this unwrap when checking is done on task input
             Cell::from(self.desc.clone().unwrap()),
-            Cell::from((self.work_secs / 60).to_string()),
-            Cell::from((self.short_break_secs / 60).to_string()),
-            Cell::from((self.long_break_secs / 60).to_string()),
+            Cell::from(Self::format_time(self.work_secs)),
+            Cell::from(Self::format_time(self.short_break_secs)),
+            Cell::from(Self::format_time(self.long_break_secs)),
         ];
         TableRow::new(cells)
     }
@@ -137,7 +147,7 @@ impl TasksState {
         let tasks = crate::db::read_tasks().await?;
         let (incomplete, complete): (Vec<_>, Vec<_>) =
             tasks.into_iter().partition(|t| t.completed.is_none());
-        let (new, started): (Vec<_>, Vec<_>) =
+        let (new, in_progress): (Vec<_>, Vec<_>) =
             incomplete.into_iter().partition(|t| t.pomos_finished == 0);
         let last_day_complete: Vec<_> = complete
             .into_iter()
@@ -150,7 +160,7 @@ impl TasksState {
             .collect();
         let task_tables = TaskTableGroup::new(vec![
             (new, "New".into()),
-            (started, "Started".into()),
+            (in_progress, "In Progress".into()),
             (last_day_complete, "Completed in the last day".into()),
         ]);
 
