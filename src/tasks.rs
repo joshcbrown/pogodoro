@@ -1,17 +1,18 @@
 use crate::{
     db,
-    pomodoro::centered_rect,
-    states::{AppMessage, AppResult},
+    pomodoro::{centered_rect, Pomodoro},
+    states::{AppResult, State},
 };
 
+use async_trait::async_trait;
 use chrono::{Duration, Local, NaiveDateTime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
-use std::iter::repeat;
+use std::{io, iter::repeat};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
-    prelude::{Alignment, Rect},
+    prelude::{Alignment, CrosstermBackend, Rect},
     style::{Color, Modifier, Style},
     text::Text,
     widgets::{
@@ -117,6 +118,7 @@ pub struct TasksState {
     input: TaskInput,
     cycles: Vec<(String, usize)>,
     input_state: InputState,
+    should_finish: bool,
 }
 
 pub enum InputState {
@@ -141,6 +143,96 @@ Use [enter] to select a task and begin a pomodoro for it.
 You can also exit the program from normal mode with [q] or [esc].
 
 Use [?] to quit this help message into normal mode.";
+
+#[async_trait]
+impl State for TasksState {
+    async fn tick(&mut self) -> AppResult<()> {
+        Ok(())
+    }
+
+    fn should_finish(&self) -> bool {
+        self.should_finish
+    }
+
+    fn render(&mut self, frame: &mut Frame<'_, CrosstermBackend<io::Stderr>>) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Percentage(30)])
+            .margin(1)
+            .split(frame.size());
+
+        self.task_tables.render_on(frame, chunks[0]);
+        self.render_barchart(frame, chunks[1]);
+
+        match self.input_state {
+            InputState::Insert => self.input.render_on(frame),
+            InputState::Help => self.render_help(frame),
+            _ => {}
+        }
+    }
+
+    async fn handle_key_event(mut self: Box<Self>, event: KeyEvent) -> AppResult<Box<dyn State>> {
+        match self.input_state {
+            InputState::Normal => match event.code {
+                KeyCode::Char('?') => self.input_state = InputState::Help,
+                KeyCode::Char('q') => self.should_finish = true,
+                KeyCode::Char('i') => {
+                    self.task_tables.focused = None;
+                    self.input_state = InputState::Insert;
+                    self.input.next()
+                }
+                // allow user to complete task
+                KeyCode::Char('c') => {
+                    if let Some(task) = self.task_tables.selected() {
+                        db::complete(task.id.unwrap() as i64).await?;
+                        return Ok(Box::new(Self::new().await?));
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => self.task_tables.next_task(),
+                KeyCode::Up | KeyCode::Char('k') => self.task_tables.prev_task(),
+                KeyCode::Tab | KeyCode::Char('l') => self.task_tables.next(),
+                KeyCode::BackTab | KeyCode::Char('h') => self.task_tables.previous(),
+                KeyCode::Enter => {
+                    if let Some(task) = self.task_tables.selected() {
+                        return Ok(Box::new(Pomodoro::default().assign(task.clone())));
+                    }
+                }
+                _ => {}
+            },
+            InputState::Insert => {
+                match event.code {
+                    KeyCode::Char(c) => self.input.push(c),
+                    KeyCode::Esc => {
+                        self.input_state = InputState::Normal;
+                        self.input.0.focused = None
+                    }
+                    KeyCode::Tab => self.input.next(),
+                    KeyCode::BackTab => self.input.previous(),
+                    KeyCode::Enter => {
+                        let (desc, work_secs, sb_secs, lb_secs) = self.input.get_task();
+                        let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
+                            .await
+                            .unwrap();
+                        self.task_tables.add_task(new_task)
+                    }
+                    KeyCode::Backspace => {
+                        self.input.pop();
+                    }
+                    _ => {}
+                }
+                if event.code == KeyCode::Char('u') && event.modifiers == KeyModifiers::CONTROL {
+                    self.input.clear()
+                };
+            }
+            InputState::Help => {
+                if event.code == KeyCode::Char('?') {
+                    self.input_state = InputState::Normal
+                }
+            }
+        };
+        Ok(self)
+    }
+}
 
 impl TasksState {
     pub async fn new() -> Result<Self, sqlx::Error> {
@@ -175,24 +267,8 @@ impl TasksState {
             input: TaskInput::default(),
             input_state: InputState::Normal,
             cycles,
+            should_finish: false,
         })
-    }
-
-    pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Percentage(30)])
-            .margin(1)
-            .split(frame.size());
-
-        self.task_tables.render_on(frame, chunks[0]);
-        self.render_barchart(frame, chunks[1]);
-
-        match self.input_state {
-            InputState::Insert => self.input.render_on(frame),
-            InputState::Help => self.render_help(frame),
-            _ => {}
-        }
     }
 
     fn render_barchart<B: Backend>(&mut self, frame: &mut Frame<'_, B>, chunk: Rect) {
@@ -234,68 +310,6 @@ impl TasksState {
             .style(Style::default().fg(Color::Yellow));
         frame.render_widget(Clear, help_chunk);
         frame.render_widget(help_text, help_chunk);
-    }
-
-    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<AppMessage> {
-        match self.input_state {
-            InputState::Normal => match key.code {
-                KeyCode::Char('?') => self.input_state = InputState::Help,
-                KeyCode::Char('q') => return Ok(AppMessage::Finish),
-                KeyCode::Char('i') => {
-                    self.task_tables.focused = None;
-                    self.input_state = InputState::Insert;
-                    self.input.next()
-                }
-                // allow user to complete task
-                KeyCode::Char('c') => {
-                    if let Some(task) = self.task_tables.selected() {
-                        db::complete(task.id.unwrap() as i64).await?;
-                        *self = Self::new().await?;
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') => self.task_tables.next_task(),
-                KeyCode::Up | KeyCode::Char('k') => self.task_tables.prev_task(),
-                KeyCode::Tab | KeyCode::Char('l') => self.task_tables.next(),
-                KeyCode::BackTab | KeyCode::Char('h') => self.task_tables.previous(),
-                KeyCode::Enter => {
-                    if let Some(task) = self.task_tables.selected() {
-                        return Ok(AppMessage::Begin(task.clone()));
-                    }
-                }
-                _ => {}
-            },
-            InputState::Insert => {
-                match key.code {
-                    KeyCode::Char(c) => self.input.push(c),
-                    KeyCode::Esc => {
-                        self.input_state = InputState::Normal;
-                        self.input.0.focused = None
-                    }
-                    KeyCode::Tab => self.input.next(),
-                    KeyCode::BackTab => self.input.previous(),
-                    KeyCode::Enter => {
-                        let (desc, work_secs, sb_secs, lb_secs) = self.input.get_task();
-                        let new_task = db::write_and_return_task(desc, work_secs, sb_secs, lb_secs)
-                            .await
-                            .unwrap();
-                        self.task_tables.add_task(new_task)
-                    }
-                    KeyCode::Backspace => {
-                        self.input.pop();
-                    }
-                    _ => {}
-                }
-                if key.code == KeyCode::Char('u') && key.modifiers == KeyModifiers::CONTROL {
-                    self.input.clear()
-                };
-            }
-            InputState::Help => {
-                if key.code == KeyCode::Char('?') {
-                    self.input_state = InputState::Normal
-                }
-            }
-        };
-        Ok(AppMessage::DoNothing)
     }
 }
 

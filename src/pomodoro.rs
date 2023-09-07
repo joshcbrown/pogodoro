@@ -1,18 +1,19 @@
 use crate::{
     db,
-    states::{AppMessage, AppResult},
-    tasks::Task,
+    states::{AppResult, State},
+    tasks::{Task, TasksState},
 };
+use async_trait::async_trait;
 use crossterm::event::{KeyCode, KeyEvent};
 use notify_rust::Notification;
 use std::{
     cmp::max,
-    fmt,
+    fmt, io,
     time::{Duration, Instant},
 };
 use tui::{
-    backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
+    prelude::CrosstermBackend,
     style::{Color, Style},
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
     Frame,
@@ -118,6 +119,7 @@ pub struct Pomodoro {
     pub task: Task,
     pub state: PomodoroState,
     pub show_help: bool,
+    pub should_finish: bool,
 }
 
 const POMO_HEIGHT: u16 = 5;
@@ -139,22 +141,14 @@ impl Default for Pomodoro {
             task: Task::default(),
             state: PomodoroState::Work,
             show_help: false,
+            should_finish: false,
         }
     }
 }
 
-impl Pomodoro {
-    pub fn assign(self, task: Task) -> Self {
-        let mut current = Timer::new(Duration::from_secs(task.work_secs));
-        current.update();
-        Self {
-            task,
-            current,
-            ..self
-        }
-    }
-
-    pub async fn update(&mut self) -> AppResult<()> {
+#[async_trait]
+impl State for Pomodoro {
+    async fn tick(&mut self) -> AppResult<()> {
         self.current.update();
         if self.current.is_finished() {
             self.change_timers().await?
@@ -162,45 +156,11 @@ impl Pomodoro {
         Ok(())
     }
 
-    async fn change_timers(&mut self) -> AppResult<()> {
-        (self.state, self.current) = match self.state {
-            PomodoroState::Work => {
-                self.task.pomos_finished += 1;
-                db::complete_cycle(self.task.id.map(|i| i as i64)).await?;
-                if let Some(id) = self.task.id {
-                    db::set_finished(id as i64, self.task.pomos_finished as i64).await?;
-                }
-                if self.task.pomos_finished % 4 == 0 {
-                    (
-                        PomodoroState::LongBreak,
-                        Timer::new(Duration::from_secs(self.task.long_break_secs)),
-                    )
-                } else {
-                    (
-                        PomodoroState::ShortBreak,
-                        Timer::new(Duration::from_secs(self.task.short_break_secs)),
-                    )
-                }
-            }
-            PomodoroState::ShortBreak | PomodoroState::LongBreak => (
-                PomodoroState::Work,
-                Timer::new(Duration::from_secs(self.task.work_secs)),
-            ),
-        };
-        self.state.notify()?;
-        self.current.update();
-        Ok(())
+    fn should_finish(&self) -> bool {
+        self.should_finish
     }
 
-    pub fn style(&self) -> Style {
-        match self.state {
-            PomodoroState::Work => Style::default().fg(Color::Red),
-            PomodoroState::ShortBreak => Style::default().fg(Color::Green),
-            PomodoroState::LongBreak => Style::default().fg(Color::Blue),
-        }
-    }
-
-    pub fn render<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
+    fn render(&mut self, frame: &mut Frame<'_, CrosstermBackend<io::Stderr>>) {
         if self.show_help {
             let help_chunk = centered_rect(50, 7, frame.size());
             let help_text = Paragraph::new(HELP_TEXT)
@@ -274,13 +234,18 @@ impl Pomodoro {
         frame.render_widget(gauge, pomo_chunks[1]);
     }
 
-    pub async fn handle_key_event(&mut self, key: KeyEvent) -> AppResult<AppMessage> {
-        match key.code {
+    async fn handle_key_event(mut self: Box<Self>, event: KeyEvent) -> AppResult<Box<dyn State>> {
+        match event.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
             KeyCode::Char('n') => self.change_timers().await?,
-            KeyCode::Char('q') => return Ok(AppMessage::Finish),
-            KeyCode::Enter => return Ok(AppMessage::GoToTasks(self.task.id)),
-            KeyCode::Esc => return Ok(AppMessage::GoToTasks(None)),
+            KeyCode::Char('q') => return Ok(self),
+            KeyCode::Enter => {
+                if let Some(id) = self.task.id {
+                    db::complete(id as i64).await?;
+                }
+                return Ok(Box::new(TasksState::new().await?));
+            }
+            KeyCode::Esc => return Ok(Box::new(TasksState::new().await?)),
             KeyCode::Char('?') => {
                 if self.show_help || !self.current.paused {
                     self.current.toggle_pause()
@@ -289,7 +254,57 @@ impl Pomodoro {
             }
             _ => {}
         }
-        Ok(AppMessage::DoNothing)
+        Ok(self)
+    }
+}
+
+impl Pomodoro {
+    pub fn assign(self, task: Task) -> Self {
+        let mut current = Timer::new(Duration::from_secs(task.work_secs));
+        current.update();
+        Self {
+            task,
+            current,
+            ..self
+        }
+    }
+
+    async fn change_timers(&mut self) -> AppResult<()> {
+        (self.state, self.current) = match self.state {
+            PomodoroState::Work => {
+                self.task.pomos_finished += 1;
+                db::complete_cycle(self.task.id.map(|i| i as i64)).await?;
+                if let Some(id) = self.task.id {
+                    db::set_finished(id as i64, self.task.pomos_finished as i64).await?;
+                }
+                if self.task.pomos_finished % 4 == 0 {
+                    (
+                        PomodoroState::LongBreak,
+                        Timer::new(Duration::from_secs(self.task.long_break_secs)),
+                    )
+                } else {
+                    (
+                        PomodoroState::ShortBreak,
+                        Timer::new(Duration::from_secs(self.task.short_break_secs)),
+                    )
+                }
+            }
+            PomodoroState::ShortBreak | PomodoroState::LongBreak => (
+                PomodoroState::Work,
+                Timer::new(Duration::from_secs(self.task.work_secs)),
+            ),
+        };
+        self.state.notify()?;
+        self.current.update();
+        Ok(())
+    }
+
+    pub fn style(&self) -> Style {
+        match self.state {
+            PomodoroState::Work => Style::default().fg(Color::Red),
+            PomodoroState::ShortBreak => Style::default().fg(Color::Green),
+            PomodoroState::LongBreak => Style::default().fg(Color::Blue),
+        }
     }
 }
 

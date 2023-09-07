@@ -15,6 +15,7 @@ sqlx = { version = "0.7", features = [
     "sqlite",
     "chrono"
 ] }
+async-trait = "0.1.73"
 tokio = { version = "1", features = ["full"] }
 tui = { package = "ratatui", version = "0.22.0", features = ["all-widgets"] }
 unicode-width = "0.1.10"

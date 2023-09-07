@@ -4,7 +4,7 @@ use pogodoro::{
     args::Cli,
     db,
     event::{Event, EventHandler},
-    states::{AppResult, AppState},
+    states::{parse_args, AppResult},
     tui::Tui,
 };
 use std::io;
@@ -15,7 +15,7 @@ async fn main() -> AppResult<()> {
     // Read command line args
     let args = Cli::parse();
     // Create an application.
-    let state = AppState::parse_args(args.command).await?;
+    let state = parse_args(args.command).await?;
     if state.is_none() {
         return Ok(());
     }
@@ -36,22 +36,17 @@ async fn main() -> AppResult<()> {
 
     // Start the main loop.
     loop {
-        if let AppState::Finished = state {
+        if state.should_finish() {
             break;
         }
         // Render the user interface.
         tui.draw(&mut state)?;
         // Handle events.
-        let result = match tui.events.next()? {
-            Event::Tick => state.tick().await,
-            Event::Key(key_event) => state.handle_key_event(key_event).await,
-            _ => Ok(()),
+        match tui.events.next()? {
+            Event::Tick => state.tick().await?,
+            Event::Key(key_event) => state = state.handle_key_event(key_event).await?,
+            _ => {}
         };
-        if let Err(e) = result {
-            tui.exit()?;
-            println!("Application error: {e}");
-            std::process::exit(1);
-        }
     }
     // Exit the user interface.
     tui.exit()?;
