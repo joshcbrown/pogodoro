@@ -8,7 +8,11 @@ use async_trait::async_trait;
 use chrono::{Duration, Local, NaiveDateTime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sqlx::{sqlite::SqliteRow, FromRow, Row};
-use std::{io, iter::repeat};
+use std::{
+    io,
+    iter::repeat,
+    ops::{Deref, DerefMut},
+};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout},
@@ -493,25 +497,21 @@ impl Focus for TaskInput {
     }
 }
 
+impl Deref for TaskInput {
+    type Target = InputGroup;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for TaskInput {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl TaskInput {
     const DEFAULT_SECS: (u64, u64, u64) = (25 * 60, 5 * 60, 15 * 60);
-    // HACK: this is kinda inheritance but not sure what else I should do
-    pub fn render_on<B: Backend>(&mut self, frame: &mut Frame<'_, B>) {
-        self.0.render_on(frame)
-    }
-
-    fn push(&mut self, c: char) {
-        self.0.push(c)
-    }
-
-    fn pop(&mut self) -> Option<char> {
-        self.0.pop()
-    }
-
-    fn clear(&mut self) {
-        self.0.clear()
-    }
-
     fn parse_secs(&mut self, i: usize, default: u64) -> i64 {
         let text: &mut String = &mut self.0.inputs[i].text;
         (text

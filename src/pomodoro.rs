@@ -238,7 +238,7 @@ impl State for Pomodoro {
         match event.code {
             KeyCode::Char('p') => self.current.toggle_pause(),
             KeyCode::Char('n') => self.change_timers().await?,
-            KeyCode::Char('q') => return Ok(self),
+            KeyCode::Char('q') => self.should_finish = true,
             KeyCode::Enter => {
                 if let Some(id) = self.task.id {
                     db::complete(id as i64).await?;
